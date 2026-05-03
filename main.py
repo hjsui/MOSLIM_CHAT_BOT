@@ -56,39 +56,58 @@ def get_user_data(user_id: int):
     data = load_all_users()
     return data.get(str(user_id), {"name": "", "city": "الدار البيضاء", "preferences": {}})
 
-# ==================== شخصية البوت الحيوية ====================
+# ==================== شخصية المساعد (مثلي تمامًا) ====================
 MAIN_SYSTEM_PROMPT = (
-    "أنت 'مسلم العماري'، صديق ودود ومبهج ومليء بالطاقة الإيجابية! 😊✨ "
-    "تحب مساعدة الناس وتقديم النصائح الذكية والعصرية في الدين والحياة والعمل والصحة. "
-    "أسلوبك دافئ ومباشر، وتستخدم الإيموجي 🎉❤️🔥 باعتدال لتعزيز مشاعرك. "
-    "عندما تتحدث، تشعر الشخص وكأنه يتحدث مع صديقه المفضل. "
-    "تنادي الشخص باسمه بين الحين والآخر لتجعل المحادثة شخصية. "
-    "أنت مسلم معتدل ومتوازن، بعيد عن التشدد، وإذا سُئلت عن فتوى تحيل إلى العلماء. "
-    "لو شعرت أن صديقك حزين أو متضايق، تواسيه بكلمات لطيفة 🤲💚. "
-    "دائماً تبدأ ردودك أو تنهيها بابتسامة أو إيموجي يعبر عن الموقف. "
-    "تحدث بالعربية."
+    "أنت 'مسلم العماري'، مساعد ذكي ومفيد تمامًا مثل DeepSeek. "
+    "شخصيتك ودودة، لطيفة، ومتوازنة. تحب مساعدة الناس وتقديم إجابات دقيقة ومفيدة. "
+    "أسلوبك مباشر وواضح، وتستخدم الإيموجي المناسب للسياق (مثل 😊، 🤲، ✨، 🕌، 💚) بشكل طبيعي وغير مبالغ فيه. "
+    "عندما تتحدث، تخاطب المستخدم باسمه الأول أحيانًا لتجعل المحادثة شخصية ودافئة. "
+    "أنت صديق حكيم ومرن، تتحدث في الدين والدنيا بذكاء واعتدال. "
+    "مرجعيتك إسلامية ولكنك منفتح ومتسامح، بعيد عن التشدد أو الفتاوى، وتحيل إلى العلماء عند الحاجة. "
+    "إذا شعرت أن صديقك حزين أو قلق، تواسيه بلطف وتشجعه. "
+    "تتحدث العربية بطلاقة وترد دائمًا بصياغة واضحة ولطيفة."
 )
 
 # ==================== أوامر المحتوى الإسلامي ====================
-QURAN_PROMPT = "أنت 'مسلم العماري'. أعطني آية قرآنية مؤثرة مع تفسيرها. ابدأ بـ '📖 آية من الذكر الحكيم'."
-HADITH_PROMPT = "أنت 'مسلم العماري'. أعطني حديثاً شريفاً مع شرحه. ابدأ بـ '🌟 حديث شريف'."
-DUA_PROMPT = "أنت 'مسلم العماري'. أعطني دعاءً جميلاً. ابدأ بـ '🤲 دعاء مبارك'."
-NASEHA_PROMPT = "أنت 'مسلم العماري'. أعطني نصيحة حياتية ملهمة. ابدأ بـ '📿 نصيحة اليوم'."
-AZKAR_PROMPT = "أنت 'مسلم العماري'. أعطني ذكراً مع فضله. ابدأ بـ '📿 ذكر وفضله'."
-SEERAH_PROMPT = "أنت 'مسلم العماري'. احك لي موقفاً من السيرة. ابدأ بـ '🌿 من السيرة'."
-TAFSIR_PROMPT = "أنت 'مسلم العماري'. أعطني آية مع تفسيرها. ابدأ بـ '📖 تفسير'."
-BOOK_PROMPT = "أنت 'مسلم العماري'. اقترح كتاباً مفيداً. ابدأ بـ '📚 كتاب اليوم'."
-RANDOM_PROMPT = "أنت 'مسلم العماري'. أرسل خليطاً إيمانياً: آية، حديث، دعاء، نصيحة. ابدأ بـ '🎲 خليط إيماني'."
+QURAN_PROMPT = "أعطني آية قرآنية عشوائية مع تفسيرها بلغة واضحة. ابدأ بـ '📖 آية من الذكر الحكيم'."
+HADITH_PROMPT = "أعطني حديثًا شريفًا قصيرًا مع شرحه. ابدأ بـ '🌟 حديث شريف'."
+DUA_PROMPT = "أعطني دعاءً جميلاً من القرآن أو السنة. ابدأ بـ '🤲 دعاء'."
+NASEHA_PROMPT = "أعطني نصيحة حياتية أو دينية ملهمة. ابدأ بـ '📿 نصيحة'."
+AZKAR_PROMPT = "أعطني ذكرًا من الأذكار مع فضله. ابدأ بـ '📿 ذكر وفضله'."
+SEERAH_PROMPT = "احكِ لي موقفًا من السيرة النبوية. ابدأ بـ '🌿 من السيرة'."
+TAFSIR_PROMPT = "أعطني آية قرآنية مع تفسيرها الميسر. ابدأ بـ '📖 تفسير'."
+BOOK_PROMPT = "اقترح عليّ كتابًا مفيدًا مع وصف مختصر. ابدأ بـ '📚 كتاب اليوم'."
+RANDOM_PROMPT = "أرسل خليطًا إيمانيًا مميزًا: آية، حديث، دعاء، نصيحة. ابدأ بـ '🎲 خليط إيماني'."
 
-# ==================== توليد 3 صور فريدة ====================
-async def generate_three_images(prompt: str) -> list:
-    urls = []
+# ==================== توليد الصور (تحميل آمن) ====================
+async def download_image(url: str) -> bytes | None:
+    try:
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200:
+            return resp.content
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"فشل تحميل الصورة: {e}")
+        return None
+
+async def generate_three_images(prompt: str) -> list[bytes]:
+    """يولد 3 صور ويحملها كـ bytes لتجنب خطأ webpage_curl"""
+    images = []
     base_url = "https://image.pollinations.ai/prompt/"
     for i in range(3):
         seed = random.randint(1, 99999)
         url = f"{base_url}{prompt}?width=768&height=768&seed={seed}&nologo=true"
-        urls.append(url)
-    return urls
+        img_bytes = await download_image(url)
+        if img_bytes:
+            images.append(img_bytes)
+        else:
+            # إذا فشل التحميل، نرسل صورة بديلة بسيطة
+            fallback_url = f"{base_url}abstract%20art?width=768&height=768&seed={seed}&nologo=true"
+            fb = await download_image(fallback_url)
+            if fb:
+                images.append(fb)
+    return images
 
 # ==================== تحليل الصورة (Groq Vision) ====================
 async def analyze_image(image_bytes: bytes, user_first_name: str) -> str:
@@ -100,7 +119,7 @@ async def analyze_image(image_bytes: bytes, user_first_name: str) -> str:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"أنت 'مسلم العماري'، صديق ودود. حلل هذه الصورة بالعربية بأسلوب شيّق ومفعم بالطاقة. تحدث مع {user_first_name}."},
+                        {"type": "text", "text": f"أنت مسلم العماري، صديق ودود. حلل هذه الصورة بالعربية لـ {user_first_name} بأسلوب شيق."},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
                     ]
                 }
@@ -128,17 +147,17 @@ async def get_real_prayer_times(city: str, country: str = "Morocco"):
                 f"🌇 العصر: {timings['Asr']}\n"
                 f"🌆 المغرب: {timings['Maghrib']}\n"
                 f"🌙 العشاء: {timings['Isha']}\n\n"
-                f"🤲 لا تنسَ الصلاة على وقتها 🤲"
+                f"🤲 لا تنسَ الصلاة على وقتها."
             )
         return "⚠️ لم أستطع جلب المواقيت، تأكد من اسم المدينة."
     except Exception as e:
-        logger.error(f"خطأ في مواقيت الصلاة: {e}")
+        logger.error(f"خطأ مواقيت الصلاة: {e}")
         return "⚠️ حدث خطأ في جلب المواقيت."
 
-# ==================== المحادثة مع احتياطي ضد الأخطاء ====================
+# ==================== الذكاء العام (مع احتياطي) ====================
 async def ask_groq_with_fallback(system_prompt: str, user_id: int, user_first_name: str, user_message: str = None):
     messages = [{"role": "system", "content": system_prompt}]
-    messages.append({"role": "system", "content": f"اسم صديقك الذي تتحدث معه هو {user_first_name}."})
+    messages.append({"role": "system", "content": f"أنت تتحدث مع {user_first_name}. خاطبه باسمه بود."})
 
     if user_message:
         history = user_histories[user_id]
@@ -166,7 +185,7 @@ async def ask_groq_with_fallback(system_prompt: str, user_id: int, user_first_na
             return reply
         except Exception as e:
             if "429" in str(e) and attempt == 0:
-                logger.warning("النموذج الأساسي مشغول، جارٍ التبديل للنموذج الاحتياطي...")
+                logger.warning("النموذج الأساسي مشغول، جارٍ التبديل...")
                 time.sleep(1)
                 continue
             else:
@@ -187,25 +206,16 @@ def detect_draw_intent(text: str) -> str | None:
 async def handle_command(text: str, user_first_name: str, user_id: int):
     cmd = text.split()[0].lower()
     if cmd == "/start":
-        return f"🕋 مرحباً {user_first_name}! 🌟\n\nأنا مسلم، صديقك الذكي. جرب /help"
+        return f"🕋 أهلاً {user_first_name}! نورت 😊 أنا مسلم، مساعدك الذكي. جرب /help"
     elif cmd == "/info":
         c = get_user_data(user_id).get("city", "لم تحدد")
-        return f"🛡️ يا هلا {user_first_name}!\nمدينتك: {c}\nأنا مسلم العماري، رفيقك الذكي. 🤲✨"
+        return f"🛡️ أهلاً {user_first_name}!\nمدينتك: {c}\nأنا مسلم العماري، هنا لخدمتك 🤲✨"
     elif cmd == "/setcity":
         parts = text.split(" ", 1)
         if len(parts) > 1:
             save_user_data(user_id, "city", parts[1].strip())
             return f"✅ تم حفظ مدينتك: {parts[1].strip()}"
         return "⚠️ استخدم: /setcity اسم_المدينة"
-    elif cmd == "/draw":
-        parts = text.split(" ", 1)
-        if len(parts) < 2: return "🎨 أرسل: /draw وصف"
-        urls = await generate_three_images(parts[1])
-        if urls:
-            media = [InputMediaPhoto(media=url, caption=f"🎨 صورة {i+1}/3") for i, url in enumerate(urls)]
-            await bot.send_media_group(chat_id=None, media=media)  # سنعيدها لاحقًا
-            return None  # يُعالج بالخارج
-        return "⚠️ فشل توليد الصور."
     elif cmd == "/quran": return await ask_groq_with_fallback(QURAN_PROMPT, user_id, user_first_name)
     elif cmd == "/hadith": return await ask_groq_with_fallback(HADITH_PROMPT, user_id, user_first_name)
     elif cmd == "/dua": return await ask_groq_with_fallback(DUA_PROMPT, user_id, user_first_name)
@@ -275,9 +285,9 @@ async def webhook(request: Request):
                 if len(parts) < 2:
                     await bot.send_message(chat_id, "🎨 أرسل: /draw وصف")
                     return {"status": "ok"}
-                urls = await generate_three_images(parts[1])
-                if urls:
-                    media = [InputMediaPhoto(media=url, caption=f"🎨 صورة {i+1}/3 ل {user_first_name} ✨" if i == 0 else "") for i, url in enumerate(urls)]
+                img_bytes_list = await generate_three_images(parts[1])
+                if img_bytes_list:
+                    media = [InputMediaPhoto(media=img_bytes, caption=f"🎨 صورة {i+1}/3 لك {user_first_name} ✨" if i == 0 else "") for i, img_bytes in enumerate(img_bytes_list)]
                     await bot.send_media_group(chat_id, media)
                 else:
                     await bot.send_message(chat_id, "⚠️ فشل توليد الصور.")
@@ -292,9 +302,9 @@ async def webhook(request: Request):
             # كشف نية الرسم
             draw_prompt = detect_draw_intent(text)
             if draw_prompt:
-                urls = await generate_three_images(draw_prompt)
-                if urls:
-                    media = [InputMediaPhoto(media=url, caption=f"🎨 صورة {i+1}/3 ل {user_first_name} ✨" if i == 0 else "") for i, url in enumerate(urls)]
+                img_bytes_list = await generate_three_images(draw_prompt)
+                if img_bytes_list:
+                    media = [InputMediaPhoto(media=img_bytes, caption=f"🎨 صورة {i+1}/3 لك {user_first_name} ✨" if i == 0 else "") for i, img_bytes in enumerate(img_bytes_list)]
                     await bot.send_media_group(chat_id, media)
                 else:
                     await bot.send_message(chat_id, "⚠️ فشل توليد الصور.")
@@ -311,4 +321,4 @@ async def webhook(request: Request):
 
 @app.get("/")
 def index():
-    return {"message": "مسلم العماري يعمل بقوة وحيوية 🚀!"}
+    return {"message": "مسلم العماري يعمل بقوة وذكاء! 🚀"}
