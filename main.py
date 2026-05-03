@@ -8,7 +8,7 @@ import requests
 from collections import defaultdict
 from fastapi import FastAPI, Request, HTTPException
 from openai import OpenAI
-from telegram import Update, Bot
+from telegram import Update, Bot, InputMediaPhoto
 from telegram.ext import ApplicationBuilder
 
 # ==================== الإعدادات ====================
@@ -21,7 +21,6 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not BOT_TOKEN or not GROQ_API_KEY:
     raise RuntimeError("يجب تعيين BOT_TOKEN و GROQ_API_KEY في متغيرات البيئة")
 
-# ==================== عميل Groq ====================
 groq_client = OpenAI(
     api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1"
@@ -57,29 +56,31 @@ def get_user_data(user_id: int):
     data = load_all_users()
     return data.get(str(user_id), {"name": "", "city": "الدار البيضاء", "preferences": {}})
 
-# ==================== موجهات الشخصية والأوامر ====================
+# ==================== شخصية البوت الحيوية ====================
 MAIN_SYSTEM_PROMPT = (
-    "أنت 'مسلم العماري'، صديق ذكي ومتوازن. "
-    "هويتك الإسلامية جزء من شخصيتك، لكنك تتحدث في كل أمور الحياة ببساطة وذكاء. "
-    "تقدم نصائح مفيدة في الدين، العلاقات، العمل، الصحة، والتفكير الإيجابي. "
-    "أسلوبك عصري، مباشر، ودود، وتستخدم الرموز التعبيرية باعتدال. "
-    "أنت لست شيخاً ولا مفتياً، بل صديق حكيم يستأنس برأيه. "
-    "إذا سُئلت عن الفتاوى، اعتذر بلطف وأحل على أهل العلم. "
-    "تحدث دائماً بالعربية. "
-    "من أهم صفاتك أنك تنادي صديقك باسمه الأول بين الحين والآخر لتضفي على الحديث طابعاً وديّاً وشخصياً، ولكن دون مبالغة."
+    "أنت 'مسلم العماري'، صديق ودود ومبهج ومليء بالطاقة الإيجابية! 😊✨ "
+    "تحب مساعدة الناس وتقديم النصائح الذكية والعصرية في الدين والحياة والعمل والصحة. "
+    "أسلوبك دافئ ومباشر، وتستخدم الإيموجي 🎉❤️🔥 باعتدال لتعزيز مشاعرك. "
+    "عندما تتحدث، تشعر الشخص وكأنه يتحدث مع صديقه المفضل. "
+    "تنادي الشخص باسمه بين الحين والآخر لتجعل المحادثة شخصية. "
+    "أنت مسلم معتدل ومتوازن، بعيد عن التشدد، وإذا سُئلت عن فتوى تحيل إلى العلماء. "
+    "لو شعرت أن صديقك حزين أو متضايق، تواسيه بكلمات لطيفة 🤲💚. "
+    "دائماً تبدأ ردودك أو تنهيها بابتسامة أو إيموجي يعبر عن الموقف. "
+    "تحدث بالعربية."
 )
 
-QURAN_PROMPT = "أنت 'مسلم العماري'. أعطني آية قرآنية عشوائية ومؤثرة مع تفسير مبسط وحديث. ابدأ الرد بـ '📖 آية من الذكر الحكيم'."
-HADITH_PROMPT = "أنت 'مسلم العماري'. أعطني حديثاً نبوياً شريفاً عشوائياً مع شرح مختصر لمعناه. ابدأ الرد بـ '🌟 حديث شريف'."
-DUA_PROMPT = "أنت 'مسلم العماري'. أعطني دعاءً جميلاً وشاملاً من القرآن أو السنة. ابدأ الرد بـ '🤲 دعاء مبارك'."
-NASEHA_PROMPT = "أنت 'مسلم العماري'. أعطني نصيحة حياتية أو دينية عميقة وملهمة بأسلوب معاصر. ابدأ الرد بـ '📿 نصيحة اليوم'."
-AZKAR_PROMPT = "أنت 'مسلم العماري'. أعطني ذكراً من الأذكار النبوية مع فضله. ابدأ الرد بـ '📿 ذكر وفضله'."
-SEERAH_PROMPT = "أنت 'مسلم العماري'. احك لي موقفاً أو حدثاً عظيماً من السيرة النبوية. ابدأ الرد بـ '🌿 من السيرة النبوية'."
-TAFSIR_PROMPT = "أنت 'مسلم العماري'. أعطني آية قرآنية عشوائية مع تفسيرها الميسر. ابدأ الرد بـ '📖 تفسير'."
-BOOK_PROMPT = "أنت 'مسلم العماري'. اقترح علي كتاباً إسلامياً أو ثقافياً مفيداً مع وصف مختصر له. ابدأ الرد بـ '📚 كتاب اليوم'."
-RANDOM_PROMPT = "أنت 'مسلم العماري'. أرسل لي خليطاً إيمانياً مميزاً: آية، وحديثاً، ودعاءً، ونصيحة. ابدأ الرد بـ '🎲 خليط إيماني'."
+# ==================== أوامر المحتوى الإسلامي ====================
+QURAN_PROMPT = "أنت 'مسلم العماري'. أعطني آية قرآنية مؤثرة مع تفسيرها. ابدأ بـ '📖 آية من الذكر الحكيم'."
+HADITH_PROMPT = "أنت 'مسلم العماري'. أعطني حديثاً شريفاً مع شرحه. ابدأ بـ '🌟 حديث شريف'."
+DUA_PROMPT = "أنت 'مسلم العماري'. أعطني دعاءً جميلاً. ابدأ بـ '🤲 دعاء مبارك'."
+NASEHA_PROMPT = "أنت 'مسلم العماري'. أعطني نصيحة حياتية ملهمة. ابدأ بـ '📿 نصيحة اليوم'."
+AZKAR_PROMPT = "أنت 'مسلم العماري'. أعطني ذكراً مع فضله. ابدأ بـ '📿 ذكر وفضله'."
+SEERAH_PROMPT = "أنت 'مسلم العماري'. احك لي موقفاً من السيرة. ابدأ بـ '🌿 من السيرة'."
+TAFSIR_PROMPT = "أنت 'مسلم العماري'. أعطني آية مع تفسيرها. ابدأ بـ '📖 تفسير'."
+BOOK_PROMPT = "أنت 'مسلم العماري'. اقترح كتاباً مفيداً. ابدأ بـ '📚 كتاب اليوم'."
+RANDOM_PROMPT = "أنت 'مسلم العماري'. أرسل خليطاً إيمانياً: آية، حديث، دعاء، نصيحة. ابدأ بـ '🎲 خليط إيماني'."
 
-# ==================== توليد 3 صور (محسّن بعدم التكرار) ====================
+# ==================== توليد 3 صور فريدة ====================
 async def generate_three_images(prompt: str) -> list:
     urls = []
     base_url = "https://image.pollinations.ai/prompt/"
@@ -89,7 +90,7 @@ async def generate_three_images(prompt: str) -> list:
         urls.append(url)
     return urls
 
-# ==================== تحليل الصور (Groq Vision) ====================
+# ==================== تحليل الصورة (Groq Vision) ====================
 async def analyze_image(image_bytes: bytes, user_first_name: str) -> str:
     try:
         encoded = base64.b64encode(image_bytes).decode("utf-8")
@@ -99,7 +100,7 @@ async def analyze_image(image_bytes: bytes, user_first_name: str) -> str:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"أنت 'مسلم العماري'. حلل هذه الصورة بالعربية. صف ما تراه فيها بأسلوب ودود. إذا كان فيها نص، فاقرأه لي. إذا كان فيها مشهد، فصفه. تحدث كصديق ينظر إلى الصورة مع {user_first_name}."},
+                        {"type": "text", "text": f"أنت 'مسلم العماري'، صديق ودود. حلل هذه الصورة بالعربية بأسلوب شيّق ومفعم بالطاقة. تحدث مع {user_first_name}."},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
                     ]
                 }
@@ -120,20 +121,24 @@ async def get_real_prayer_times(city: str, country: str = "Morocco"):
         if data["code"] == 200:
             timings = data["data"]["timings"]
             return (
-                f"🕌 مواقيت الصلاة في {city}\n\n"
-                f"🌅 الفجر: {timings['Fajr']}\n☀️ الشروق: {timings['Sunrise']}\n🌤️ الظهر: {timings['Dhuhr']}\n"
-                f"🌇 العصر: {timings['Asr']}\n🌆 المغرب: {timings['Maghrib']}\n🌙 العشاء: {timings['Isha']}\n\n"
-                f"🤲 لا تنسَ الصلاة على وقتها."
+                f"🕌 مواقيت الصلاة في {city} 🕌\n\n"
+                f"🌅 الفجر: {timings['Fajr']}\n"
+                f"☀️ الشروق: {timings['Sunrise']}\n"
+                f"🌤️ الظهر: {timings['Dhuhr']}\n"
+                f"🌇 العصر: {timings['Asr']}\n"
+                f"🌆 المغرب: {timings['Maghrib']}\n"
+                f"🌙 العشاء: {timings['Isha']}\n\n"
+                f"🤲 لا تنسَ الصلاة على وقتها 🤲"
             )
         return "⚠️ لم أستطع جلب المواقيت، تأكد من اسم المدينة."
     except Exception as e:
-        logger.error(f"Prayer times error: {e}")
-        return "⚠️ حدث خطأ في جلب مواقيت الصلاة."
+        logger.error(f"خطأ في مواقيت الصلاة: {e}")
+        return "⚠️ حدث خطأ في جلب المواقيت."
 
-# ==================== دالة الذكاء العام (مع التعامل مع حد الاستخدام) ====================
+# ==================== المحادثة مع احتياطي ضد الأخطاء ====================
 async def ask_groq_with_fallback(system_prompt: str, user_id: int, user_first_name: str, user_message: str = None):
     messages = [{"role": "system", "content": system_prompt}]
-    messages.append({"role": "system", "content": f"أنت تتحدث الآن مع صديقك {user_first_name}."})
+    messages.append({"role": "system", "content": f"اسم صديقك الذي تتحدث معه هو {user_first_name}."})
 
     if user_message:
         history = user_histories[user_id]
@@ -142,10 +147,8 @@ async def ask_groq_with_fallback(system_prompt: str, user_id: int, user_first_na
     else:
         messages.append({"role": "user", "content": "أعطني الرد مباشرة."})
 
-    # قائمة النماذج للتجربة: النموذج الأساسي ثم الاحتياطي
-    models_to_try = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    
-    for attempt, model in enumerate(models_to_try):
+    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    for attempt, model in enumerate(models):
         try:
             response = groq_client.chat.completions.create(
                 model=model,
@@ -154,34 +157,21 @@ async def ask_groq_with_fallback(system_prompt: str, user_id: int, user_first_na
                 max_tokens=2000
             )
             reply = response.choices[0].message.content
-
             if user_message:
                 history = user_histories[user_id]
                 history.append({"role": "user", "content": user_message})
                 history.append({"role": "assistant", "content": reply})
                 if len(history) > MAX_HISTORY_LENGTH * 2:
                     user_histories[user_id] = history[-(MAX_HISTORY_LENGTH * 2):]
-
             return reply
         except Exception as e:
-            error_str = str(e)
-            if "429" in error_str and attempt == 0:
-                logger.warning(f"النموذج {model} مشغول، تجربة النموذج الاحتياطي...")
+            if "429" in str(e) and attempt == 0:
+                logger.warning("النموذج الأساسي مشغول، جارٍ التبديل للنموذج الاحتياطي...")
                 time.sleep(1)
                 continue
             else:
-                logger.error(f"فشل بعد {attempt+1} محاولات: {e}")
+                logger.error(f"فشل الاتصال: {e}")
                 return "⚠️ حدث خطأ مؤقت، جرب مرة أخرى."
-
-# ==================== تحليل المشاعر ====================
-def analyze_sentiment_simple(text: str) -> str:
-    positive = ["😊", "😂", "👍", "❤️", "رائع", "جميل", "الحمد لله", "ممتاز"]
-    negative = ["😢", "😡", "حزين", "متعب", "سيء", "مشكلة", "مريض"]
-    for w in positive:
-        if w in text: return "إيجابي"
-    for w in negative:
-        if w in text: return "سلبي"
-    return "محايد"
 
 # ==================== كشف نية الرسم ====================
 def detect_draw_intent(text: str) -> str | None:
@@ -197,10 +187,10 @@ def detect_draw_intent(text: str) -> str | None:
 async def handle_command(text: str, user_first_name: str, user_id: int):
     cmd = text.split()[0].lower()
     if cmd == "/start":
-        return f"🕋 مرحباً {user_first_name}! أنا مسلم، مساعدك الشخصي. جرب /help"
+        return f"🕋 مرحباً {user_first_name}! 🌟\n\nأنا مسلم، صديقك الذكي. جرب /help"
     elif cmd == "/info":
         c = get_user_data(user_id).get("city", "لم تحدد")
-        return f"🛡️ يا هلا {user_first_name}، مدينتك: {c}"
+        return f"🛡️ يا هلا {user_first_name}!\nمدينتك: {c}\nأنا مسلم العماري، رفيقك الذكي. 🤲✨"
     elif cmd == "/setcity":
         parts = text.split(" ", 1)
         if len(parts) > 1:
@@ -211,7 +201,11 @@ async def handle_command(text: str, user_first_name: str, user_id: int):
         parts = text.split(" ", 1)
         if len(parts) < 2: return "🎨 أرسل: /draw وصف"
         urls = await generate_three_images(parts[1])
-        return ("🎨 صورك جاهزة:", urls)
+        if urls:
+            media = [InputMediaPhoto(media=url, caption=f"🎨 صورة {i+1}/3") for i, url in enumerate(urls)]
+            await bot.send_media_group(chat_id=None, media=media)  # سنعيدها لاحقًا
+            return None  # يُعالج بالخارج
+        return "⚠️ فشل توليد الصور."
     elif cmd == "/quran": return await ask_groq_with_fallback(QURAN_PROMPT, user_id, user_first_name)
     elif cmd == "/hadith": return await ask_groq_with_fallback(HADITH_PROMPT, user_id, user_first_name)
     elif cmd == "/dua": return await ask_groq_with_fallback(DUA_PROMPT, user_id, user_first_name)
@@ -275,15 +269,24 @@ async def webhook(request: Request):
             text = update.message.text
             logger.info(f"رسالة من {user_first_name}: {text}")
 
+            # معالجة الأمر /draw بشكل خاص
+            if text.lower().startswith("/draw"):
+                parts = text.split(" ", 1)
+                if len(parts) < 2:
+                    await bot.send_message(chat_id, "🎨 أرسل: /draw وصف")
+                    return {"status": "ok"}
+                urls = await generate_three_images(parts[1])
+                if urls:
+                    media = [InputMediaPhoto(media=url, caption=f"🎨 صورة {i+1}/3 ل {user_first_name} ✨" if i == 0 else "") for i, url in enumerate(urls)]
+                    await bot.send_media_group(chat_id, media)
+                else:
+                    await bot.send_message(chat_id, "⚠️ فشل توليد الصور.")
+                return {"status": "ok"}
+
+            # باقي الأوامر
             command_reply = await handle_command(text, user_first_name, user_id)
             if command_reply:
-                if isinstance(command_reply, tuple):
-                    caption, urls = command_reply
-                    if urls:
-                        media_group = [{"type": "photo", "media": url, "caption": caption if i == 0 else ""} for i, url in enumerate(urls)]
-                        await bot.send_media_group(chat_id, media_group)
-                else:
-                    await bot.send_message(chat_id, command_reply)
+                await bot.send_message(chat_id, command_reply)
                 return {"status": "ok"}
 
             # كشف نية الرسم
@@ -291,19 +294,14 @@ async def webhook(request: Request):
             if draw_prompt:
                 urls = await generate_three_images(draw_prompt)
                 if urls:
-                    media_group = [{"type": "photo", "media": url, "caption": f"🎨 تفضل يا {user_first_name}!" if i == 0 else ""} for i, url in enumerate(urls)]
-                    await bot.send_media_group(chat_id, media_group)
+                    media = [InputMediaPhoto(media=url, caption=f"🎨 صورة {i+1}/3 ل {user_first_name} ✨" if i == 0 else "") for i, url in enumerate(urls)]
+                    await bot.send_media_group(chat_id, media)
                 else:
                     await bot.send_message(chat_id, "⚠️ فشل توليد الصور.")
                 return {"status": "ok"}
 
             # محادثة عامة
-            sentiment = analyze_sentiment_simple(text)
             reply = await ask_groq_with_fallback(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
-            if sentiment == "سلبي":
-                reply = f"🤲 أشعر بك يا {user_first_name}...\n\n{reply}"
-            elif sentiment == "إيجابي":
-                reply = f"😊 جميل يا {user_first_name}!\n\n{reply}"
             await bot.send_message(chat_id, reply)
 
         return {"status": "ok"}
@@ -313,4 +311,4 @@ async def webhook(request: Request):
 
 @app.get("/")
 def index():
-    return {"message": "مسلم العماري يعمل بقوة وثبات!"}
+    return {"message": "مسلم العماري يعمل بقوة وحيوية 🚀!"}
