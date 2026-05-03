@@ -21,13 +21,21 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # اختياري لتحليل الصو
 if not BOT_TOKEN or not OPENROUTER_API_KEY:
     raise RuntimeError("يجب تعيين BOT_TOKEN و OPENROUTER_API_KEY في متغيرات البيئة")
 
-# إعداد OpenRouter
-client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+# إعداد OpenRouter (timeout=20 أسرع)
+client = OpenAI(
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    timeout=20.0
+)
 
 # إعداد Groq (اختياري)
 groq_client = None
 if GROQ_API_KEY:
-    groq_client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
+    groq_client = OpenAI(
+        api_key=GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
+        timeout=20.0
+    )
 
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 bot: Bot = telegram_app.bot
@@ -58,7 +66,7 @@ def get_user_city(user_id: int) -> str:
     data = load_user_data()
     return data.get(str(user_id), {}).get("city", "الدار البيضاء")
 
-# -------------------- شخصية البوت --------------------
+# -------------------- شخصية البوت (مرونة لغوية) --------------------
 SYSTEM_PROMPT = (
     "أنت 'مسلم العماري'، صديق ذكي ومتوازن. "
     "شخصيتك ودودة، لطيفة، ومتوازنة. تقدم إجابات دقيقة ومفيدة بأسلوب مباشر وواضح. "
@@ -66,11 +74,13 @@ SYSTEM_PROMPT = (
     "تخاطب المستخدم باسمه الأول أحياناً لتجعل المحادثة شخصية. "
     "مرجعيتك إسلامية معتدلة، بعيد عن التشدد. إذا سُئلت عن فتوى، تقول: 'هذه مسألة دينية دقيقة، يُفضل سؤال أهل العلم'. "
     "لا تبدأ أي رد بـ 'مسلم العماري:' أو أي صيغة مشابهة. تحدث كصديق بشكل طبيعي. "
-    "لا تستخدم كلمات مثل 'حبيبي' أو 'يا قلبي'. تتحدث العربية بطلاقة وترد بصياغة واضحة."
+    "لا تستخدم كلمات مثل 'حبيبي' أو 'يا قلبي'. "
+    "تتحدث بالعربية الفصحى الواضحة بشكل افتراضي. إذا خاطبك المستخدم بالعامية المصرية أو المغربية، يمكنك الرد بنفس الأسلوب. لا تخلط الفصحى بالعامية في نفس الرد."
 )
 
-# -------------------- قائمة النماذج الاحتياطية على OpenRouter --------------------
+# -------------------- قائمة النماذج (الأسرع أولاً) --------------------
 FREE_MODELS = [
+    "mistralai/mistral-small-3.1-24b-instruct:free",  # الأسرع
     "meta-llama/llama-3.3-70b-instruct:free",
     "qwen/qwen3-next-80b-a3b-instruct:free",
     "nvidia/nemotron-3-nano-30b-a3b:free",
@@ -83,7 +93,7 @@ async def generate_single_image(prompt: str) -> bytes | None:
     try:
         seed = random.randint(1, 99999)
         url = f"https://image.pollinations.ai/prompt/{prompt}?width=768&height=768&seed={seed}&nologo=true"
-        resp = requests.get(url, timeout=25)
+        resp = requests.get(url, timeout=20)
         return resp.content if resp.status_code == 200 else None
     except Exception as e:
         logger.error(f"خطأ في توليد الصورة: {e}")
@@ -100,11 +110,13 @@ async def analyze_image(image_bytes: bytes, user_name: str) -> str | None:
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": f"حلل هذه الصورة بالعربية لـ {user_name} بأسلوب شيق."},
+                    {"type": "text", "text": f"حلل هذه الصورة لـ {user_name} بأسلوب شيق."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
                 ]
             }],
-            temperature=0.5, max_tokens=2000
+            temperature=0.5,
+            max_tokens=1500,
+            timeout=20.0
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -125,18 +137,19 @@ def detect_draw_intent(text: str) -> str | None:
 async def ask_ai(user_id: int, user_name: str, user_message: str) -> str:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # إضافة تاريخ المحادثة
     if user_id in user_histories:
         messages.extend(user_histories[user_id])
 
-    # إضافة رسالة المستخدم
     messages.append({"role": "user", "content": user_message})
 
-    # تجربة النماذج
     for model in FREE_MODELS:
         try:
             response = client.chat.completions.create(
-                model=model, messages=messages, temperature=0.85, max_tokens=2000
+                model=model,
+                messages=messages,
+                temperature=0.85,
+                max_tokens=1500,   # أسرع قليلاً
+                timeout=20.0
             )
             reply = response.choices[0].message.content.strip()
 
@@ -223,9 +236,9 @@ async def webhook(request: Request):
             await bot.send_message(chat_id, "😄 ملصق جميل!")
             return {"status": "ok"}
 
-        # -------------------- نص (الحالة الأساسية) --------------------
+        # -------------------- نص --------------------
         if not update.message.text:
-            return {"status": "ok"}  # لا يوجد نص ولا صورة ولا صوت، تجاهل
+            return {"status": "ok"}
 
         text = update.message.text.strip()
         if not text:
