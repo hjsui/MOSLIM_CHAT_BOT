@@ -10,16 +10,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # أصبح المفتاح لجيميناي
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not BOT_TOKEN or not GEMINI_API_KEY:
     raise RuntimeError("يجب تعيين BOT_TOKEN و GEMINI_API_KEY في متغيرات البيئة")
 
-# ---------- عميل Gemini (مجاني!) ----------
+# ---------- عميل Gemini ----------
 gemini = OpenAI(
     api_key=GEMINI_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
+
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 bot: Bot = telegram_app.bot
 
@@ -27,18 +28,27 @@ bot: Bot = telegram_app.bot
 async def ask_gemini(user_message: str) -> str:
     try:
         response = gemini.chat.completions.create(
-            model="gemini-1.5-flash", # نموذج مجاني وسريع
+            model="gemini-2.0-flash",
             messages=[
-                {"role": "system", "content": "أنت مساعد ودود ومفيد بالعربية، اسمك MOSLIM CHAT. أجب دائمًا بالعربية."},
+                {
+                    "role": "system",
+                    "content": (
+                        "أنت مساعد ودود ومفيد بالعربية، اسمك MOSLIM CHAT. "
+                        "أسلوبك لطيف ومباشر، تحب تقديم النصائح المفيدة. "
+                        "أجب دائمًا بالعربية."
+                    )
+                },
                 {"role": "user", "content": user_message}
             ],
+            temperature=0.9,
+            max_tokens=2000
         )
         return str(response.choices[0].message.content)
     except Exception as e:
         logger.error(f"Gemini error: {e}")
         return "⚠️ حدث خطأ مؤقت، حاول بعد قليل."
 
-# ---------- تطبيق FastAPI (لم يتغير) ----------
+# ---------- تطبيق FastAPI ----------
 app = FastAPI()
 
 @app.post("/webhook")
@@ -50,6 +60,7 @@ async def webhook(request: Request):
         if update.message and update.message.text:
             chat_id = update.message.chat_id
             text = update.message.text
+            logger.info(f"رسالة من {chat_id}: {text}")
             reply = await ask_gemini(text)
             await bot.send_message(chat_id, reply)
         return {"status": "ok"}
