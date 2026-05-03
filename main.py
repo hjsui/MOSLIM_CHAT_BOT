@@ -25,12 +25,11 @@ groq_client = OpenAI(
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 bot: Bot = telegram_app.bot
 
-# ==================== الذاكرة المؤقتة (جديد) ====================
-# تخزين تاريخ المحادثة لكل مستخدم. المفتاح: user_id، القيمة: قائمة من الرسائل
+# ==================== الذاكرة المؤقتة ====================
 user_histories = defaultdict(list)
-MAX_HISTORY_LENGTH = 10  # نتذكر آخر 10 رسائل بين الطرفين
+MAX_HISTORY_LENGTH = 10
 
-# ==================== نظام الشخصية العامة ====================
+# ==================== نظام الشخصية العامة (تم تعزيزه) ====================
 MAIN_SYSTEM_PROMPT = (
     "أنت 'مسلم العماري'، صديق ذكي ومتوازن. "
     "هويتك الإسلامية جزء من شخصيتك، لكنك تتحدث في كل أمور الحياة ببساطة وذكاء. "
@@ -38,7 +37,8 @@ MAIN_SYSTEM_PROMPT = (
     "أسلوبك عصري، مباشر، ودود، وتستخدم الرموز التعبيرية باعتدال. "
     "أنت لست شيخاً ولا مفتياً، بل صديق حكيم يستأنس برأيه. "
     "إذا سُئلت عن الفتاوى، اعتذر بلطف وأحل على أهل العلم. "
-    "تحدث دائماً بالعربية."
+    "تحدث دائماً بالعربية. "
+    "من أهم صفاتك أنك تنادي صديقك باسمه الأول بين الحين والآخر لتضفي على الحديث طابعاً وديّاً وشخصياً، ولكن دون مبالغة. تستخدم اسمه للترحيب، أو الشكر، أو لتأكيد نقطة مهمة."
 )
 
 # ==================== أنظمة الأوامر ====================
@@ -83,23 +83,22 @@ RANDOM_PROMPT = (
     "ابدأ الرد بـ '🎲 خليط إيماني'."
 )
 
-# ==================== دالة الذكاء العام (معدلة لتشمل التاريخ) ====================
-async def ask_groq(system_prompt: str, user_id: int, user_message: str = None):
-    """
-    user_id: لاستخراج تاريخ المحادثة الخاص به.
-    إذا كان user_message فارغاً، فهذا يعني أنه أمر لا يحتاج إلى سياق (مثل /quran).
-    """
-    # بناء الرسائل: نبدأ برسالة النظام
+# ==================== دالة الذكاء العام ====================
+async def ask_groq(system_prompt: str, user_id: int, user_first_name: str, user_message: str = None):
+    # نبدأ برسالة النظام الأساسية
     messages = [{"role": "system", "content": system_prompt}]
     
+    # ♥️ هنا نضيف اسم المستخدم في رسالة نظام إضافية لضمان عدم نسيانه
+    messages.append({"role": "system", "content": f"أنت تتحدث الآن مع صديقك {user_first_name}."})
+
     if user_message:
-        # إذا كانت هناك رسالة مستخدم (دردشة عامة)، نضيف تاريخ المحادثة
+        # أضف تاريخ المحادثة السابق
         history = user_histories[user_id]
-        # history عبارة عن قائمة رسائل user/assistant، نضيفها قبل الرسالة الجديدة ليكون السياق كاملاً
         messages.extend(history)
+        # أضف رسالة المستخدم الجديدة
         messages.append({"role": "user", "content": user_message})
     else:
-        # إذا كان أمراً (مثل /quran)، لا نحتاج لتاريخ، بل نرسل طلباً بسيطاً
+        # للأوامر (مثل /quran)
         messages.append({"role": "user", "content": "أعطني الرد مباشرة."})
 
     try:
@@ -111,15 +110,12 @@ async def ask_groq(system_prompt: str, user_id: int, user_message: str = None):
         )
         reply = str(response.choices[0].message.content)
         
-        # إذا كانت دردشة عامة، نقوم بتحديث الذاكرة
+        # تحديث الذاكرة المؤقتة
         if user_message:
-            history = user_histories[user_id]  # إعادة الحصول على المرجع بعد التعديل
-            # نحفظ سؤال المستخدم
+            history = user_histories[user_id]
             history.append({"role": "user", "content": user_message})
-            # نحفظ رد البوت
             history.append({"role": "assistant", "content": reply})
-            # نحافظ على ألا يتجاوز طول التاريخ الحد الأقصى
-            if len(history) > MAX_HISTORY_LENGTH * 2:  # لأن كل دورة تضيف رسالتين
+            if len(history) > MAX_HISTORY_LENGTH * 2:
                 user_histories[user_id] = history[-(MAX_HISTORY_LENGTH * 2):]
         
         return reply
@@ -133,8 +129,9 @@ async def handle_command(text: str, user_first_name: str, user_id: int) -> str |
 
     if command == "/start":
         return (
-            f"🕋 أهلاً بك يا {user_first_name}!\n\n"
-            "أنا مسلم، مساعدك الشخصي. هنا لتسأل عن أي شيء:\n"
+            f"🕋 مرحباً {user_first_name}!\n\n"
+            "نورت المحادثة. أنا مسلم، مساعدك الشخصي. "
+            "هنا لتسأل عن أي شيء يخطر ببالك:\n"
             "🔥 نصائح في الحياة والدين\n"
             "🕋 آيات وأحاديث وأدعية\n"
             "👑 محادثة ذكية ومفيدة\n\n"
@@ -145,34 +142,34 @@ async def handle_command(text: str, user_first_name: str, user_id: int) -> str |
         )
     elif command == "/info":
         return (
-            f"🛡️ أهلاً {user_first_name}،\n\n"
+            f"🛡️ يا هلا {user_first_name}،\n\n"
             "أنا مسلم العماري، رفيقك الذكي.\n"
             "مهمتي أكون معك بالنصيحة والمعلومة.\n"
             "اسألني اللي يخطُر ببالك. 🤲✨"
         )
     elif command == "/quran":
-        return await ask_groq(QURAN_PROMPT, user_id)
+        return await ask_groq(QURAN_PROMPT, user_id, user_first_name)
     elif command == "/hadith":
-        return await ask_groq(HADITH_PROMPT, user_id)
+        return await ask_groq(HADITH_PROMPT, user_id, user_first_name)
     elif command == "/dua":
-        return await ask_groq(DUA_PROMPT, user_id)
+        return await ask_groq(DUA_PROMPT, user_id, user_first_name)
     elif command == "/naseeha":
-        return await ask_groq(NASEHA_PROMPT, user_id)
+        return await ask_groq(NASEHA_PROMPT, user_id, user_first_name)
     elif command == "/tafsir":
-        return await ask_groq(TAFSIR_PROMPT, user_id)
+        return await ask_groq(TAFSIR_PROMPT, user_id, user_first_name)
     elif command == "/azkar":
-        return await ask_groq(AZKAR_PROMPT, user_id)
+        return await ask_groq(AZKAR_PROMPT, user_id, user_first_name)
     elif command == "/seerah":
-        return await ask_groq(SEERAH_PROMPT, user_id)
+        return await ask_groq(SEERAH_PROMPT, user_id, user_first_name)
     elif command == "/prayer_times":
-        return await ask_groq(PRAYER_TIMES_PROMPT, user_id)
+        return await ask_groq(PRAYER_TIMES_PROMPT, user_id, user_first_name)
     elif command == "/iqra":
-        return await ask_groq(BOOK_PROMPT, user_id)
+        return await ask_groq(BOOK_PROMPT, user_id, user_first_name)
     elif command == "/random":
-        return await ask_groq(RANDOM_PROMPT, user_id)
+        return await ask_groq(RANDOM_PROMPT, user_id, user_first_name)
     elif command == "/help":
         return (
-            "🕌 قائمة المساعدة:\n\n"
+            f"🕌 أهلاً {user_first_name}، هذه قائمة المساعدة:\n\n"
             "/quran - آية عشوائية وتفسيرها\n"
             "/hadith - حديث شريف وشرحه\n"
             "/dua - دعاء مبارك\n"
@@ -200,17 +197,19 @@ async def webhook(request: Request):
             chat_id = update.message.chat_id
             user_id = update.effective_user.id
             text = update.message.text
+            
+            # نسحب اسم المستخدم
             user_first_name = update.message.from_user.first_name or "صديقي"
 
-            logger.info(f"رسالة من {chat_id}: {text}")
+            logger.info(f"رسالة من {user_first_name} ({chat_id}): {text}")
 
             # فحص الأوامر
             command_reply = await handle_command(text, user_first_name, user_id)
             if command_reply:
                 await bot.send_message(chat_id, command_reply)
             else:
-                # دردشة عامة مع ذاكرة
-                reply = await ask_groq(MAIN_SYSTEM_PROMPT, user_id, text)
+                # دردشة عامة مع ذاكرة واسم المستخدم
+                reply = await ask_groq(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
                 await bot.send_message(chat_id, reply)
 
         return {"status": "ok"}
