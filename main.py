@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import base64
 import requests
 from collections import defaultdict
 from fastapi import FastAPI, Request, HTTPException
@@ -8,7 +9,6 @@ from openai import OpenAI
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder
 
-# ==================== الإعدادات ====================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,6 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not BOT_TOKEN or not GROQ_API_KEY:
     raise RuntimeError("ينقص متغيرات البيئة BOT_TOKEN أو GROQ_API_KEY")
 
-# ==================== عميل Groq ====================
 groq_client = OpenAI(
     api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1"
@@ -27,16 +26,14 @@ groq_client = OpenAI(
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 bot: Bot = telegram_app.bot
 
-# ==================== الذاكرة المؤقتة (آخر 10 رسائل) ====================
 user_histories = defaultdict(list)
 MAX_HISTORY_LENGTH = 10
 
-# ==================== الذاكرة طويلة المدى (ملف JSON) ====================
 DATA_FILE = "users_data.json"
 
 def load_all_users():
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+        with open(DATA_FILE, "r") as f:
             return json.load(f)
     except:
         return {}
@@ -47,14 +44,13 @@ def save_user_data(user_id: int, key: str, value):
     if uid not in data:
         data[uid] = {"name": "", "city": "الدار البيضاء", "preferences": {}}
     data[uid][key] = value
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    with open(DATA_FILE, "w") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def get_user_data(user_id: int):
     data = load_all_users()
     return data.get(str(user_id), {"name": "", "city": "الدار البيضاء", "preferences": {}})
 
-# ==================== نظام الشخصية العامة ====================
 MAIN_SYSTEM_PROMPT = (
     "أنت 'مسلم العماري'، صديق ذكي ومتوازن. "
     "هويتك الإسلامية جزء من شخصيتك، لكنك تتحدث في كل أمور الحياة ببساطة وذكاء. "
@@ -66,7 +62,6 @@ MAIN_SYSTEM_PROMPT = (
     "من أهم صفاتك أنك تنادي صديقك باسمه الأول بين الحين والآخر لتضفي على الحديث طابعاً وديّاً وشخصياً، ولكن دون مبالغة."
 )
 
-# ==================== أنظمة الأوامر ====================
 QURAN_PROMPT = (
     "أنت بوت 'مسلم العماري'. أعطني آية قرآنية عشوائية ومؤثرة مع تفسير مبسط وحديث. ابدأ الرد بـ '📖 آية من الذكر الحكيم'."
 )
@@ -94,17 +89,49 @@ BOOK_PROMPT = (
 RANDOM_PROMPT = (
     "أنت بوت 'مسلم العماري'. أرسل لي خليطاً إيمانياً مميزاً: آية، وحديثاً، ودعاءً، ونصيحة. ابدأ الرد بـ '🎲 خليط إيماني'."
 )
+DRAW_PROMPT = (
+    "أنت 'مسلم العماري'. أعطني وصفاً إبداعياً دقيقاً بالعربية ليتم تحويله إلى صورة. "
+    "تخيل المشهد ووصفه بدقة (ألوان، إضاءة، تفاصيل). أجب بالوصف فقط دون أي كلام إضافي."
+)
 
-# ==================== مواقيت الصلاة الحقيقية ====================
+async def generate_image(prompt: str):
+    try:
+        url = f"https://image.pollinations.ai/prompt/{prompt}?width=768&height=768&nologo=true"
+        return url
+    except Exception as e:
+        logger.error(f"توليد الصورة فشل: {e}")
+        return None
+
+async def analyze_image(image_bytes: bytes, user_first_name: str) -> str:
+    try:
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        response = groq_client.chat.completions.create(
+            model="llama-3.2-90b-vision-preview",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"أنت 'مسلم العماري'. حلل هذه الصورة بالعربية. صف ما تراه فيها بأسلوب ودود. إذا كان فيها نص، فاقرأه لي. إذا كان فيها مشهد، فصفه. تحدث كصديق ينظر إلى الصورة مع {user_first_name}."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
+                    ]
+                }
+            ],
+            temperature=0.5,
+            max_tokens=2000
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"تحليل الصورة فشل: {e}")
+        return "⚠️ لم أستطع تحليل الصورة، حاول مرة أخرى."
+
 async def get_real_prayer_times(city: str, country: str = "Morocco"):
     try:
         url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country={country}"
-        response = requests.get(url, timeout=5)
-        data = response.json()
+        data = requests.get(url, timeout=5).json()
         if data["code"] == 200:
             timings = data["data"]["timings"]
             return (
-                f"🕌 *مواقيت الصلاة في {city}*\n\n"
+                f"🕌 مواقيت الصلاة في {city}\n\n"
                 f"🌅 الفجر: {timings['Fajr']}\n"
                 f"☀️ الشروق: {timings['Sunrise']}\n"
                 f"🌤️ الظهر: {timings['Dhuhr']}\n"
@@ -118,7 +145,6 @@ async def get_real_prayer_times(city: str, country: str = "Morocco"):
         logger.error(f"Prayer times error: {e}")
         return "⚠️ حدث خطأ في جلب مواقيت الصلاة."
 
-# ==================== دالة الذكاء العام ====================
 async def ask_groq(system_prompt: str, user_id: int, user_first_name: str, user_message: str = None):
     messages = [{"role": "system", "content": system_prompt}]
     messages.append({"role": "system", "content": f"أنت تتحدث الآن مع صديقك {user_first_name}."})
@@ -151,95 +177,71 @@ async def ask_groq(system_prompt: str, user_id: int, user_first_name: str, user_
         logger.error(f"Groq error: {e}")
         return "⚠️ حدث خطأ مؤقت، جرب مرة أخرى."
 
-# ==================== تحليل المشاعر ====================
 async def analyze_sentiment(text: str) -> str:
     prompt = f"حلل مشاعر هذا النص: '{text}'. رد بكلمة واحدة فقط: 'إيجابي' أو 'سلبي' أو 'محايد'."
     try:
-        response = groq_client.chat.completions.create(
+        r = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=10
+            temperature=0.2, max_tokens=10
         )
-        return str(response.choices[0].message.content).strip()
+        return r.choices[0].message.content.strip()
     except:
         return "محايد"
 
-# ==================== معالجة الأوامر ====================
-async def handle_command(text: str, user_first_name: str, user_id: int) -> str | None:
+def detect_draw_intent(text: str) -> str | None:
+    triggers = ["ارسم", "اصنع صورة", "صور لي", "صوّر", "تخيل صورة", "اعمل صورة", "رسم", "خلق صورة"]
+    text_lower = text.lower()
+    for trigger in triggers:
+        if trigger in text_lower:
+            parts = text.split(trigger, 1)
+            if len(parts) > 1 and parts[1].strip():
+                return parts[1].strip()
+    return None
+
+async def handle_command(text: str, user_first_name: str, user_id: int):
     command = text.split()[0].lower()
 
     if command == "/start":
-        return (
-            f"🕋 مرحباً {user_first_name}!\n\n"
-            "نورت المحادثة. أنا مسلم، مساعدك الشخصي. "
-            "هنا لتسأل عن أي شيء يخطر ببالك:\n"
-            "🔥 نصائح في الحياة والدين\n"
-            "🕋 آيات وأحاديث وأدعية\n"
-            "👑 محادثة ذكية ومفيدة\n\n"
-            "📜 جرب الأوامر:\n"
-            "/quran | /hadith | /dua | /naseeha\n"
-            "/tafsir | /azkar | /seerah | /iqra\n"
-            "/prayer_times | /setcity | /random | /info"
-        )
+        return f"🕋 مرحباً {user_first_name}!\n\nنورت المحادثة. أنا مسلم، مساعدك الشخصي.\n🔥 نصائح\n🕋 آيات وأحاديث\n👑 محادثة ذكية\n🎨 رسم صور (/draw)\n👁️ قراءة الصور (أرسل صورة)\n\n📜 /help للقائمة."
     elif command == "/info":
-        user_data = get_user_data(user_id)
-        city = user_data.get("city", "لم تحدد بعد")
-        return (
-            f"🛡️ يا هلا {user_first_name}،\n\n"
-            f"مدينتك: {city}\n"
-            "أنا مسلم العماري، رفيقك الذكي.\n"
-            "مهمتي أكون معك بالنصيحة والمعلومة.\n"
-            "اسألني اللي يخطُر ببالك. 🤲✨"
-        )
+        c = get_user_data(user_id).get("city", "لم تحدد")
+        return f"🛡️ يا هلا {user_first_name}،\n\nمدينتك: {c}\nأنا مسلم العماري، رفيقك الذكي.\nمهمتي أكون معك بالنصيحة والمعلومة."
     elif command == "/setcity":
         parts = text.split(" ", 1)
         if len(parts) > 1:
-            city = parts[1].strip()
-            save_user_data(user_id, "city", city)
-            return f"✅ تم حفظ مدينتك: {city}"
+            save_user_data(user_id, "city", parts[1].strip())
+            return f"✅ تم حفظ مدينتك: {parts[1].strip()}"
         return "⚠️ استخدم: /setcity اسم_المدينة"
-    elif command == "/quran":
-        return await ask_groq(QURAN_PROMPT, user_id, user_first_name)
-    elif command == "/hadith":
-        return await ask_groq(HADITH_PROMPT, user_id, user_first_name)
-    elif command == "/dua":
-        return await ask_groq(DUA_PROMPT, user_id, user_first_name)
-    elif command == "/naseeha":
-        return await ask_groq(NASEHA_PROMPT, user_id, user_first_name)
-    elif command == "/tafsir":
-        return await ask_groq(TAFSIR_PROMPT, user_id, user_first_name)
-    elif command == "/azkar":
-        return await ask_groq(AZKAR_PROMPT, user_id, user_first_name)
-    elif command == "/seerah":
-        return await ask_groq(SEERAH_PROMPT, user_id, user_first_name)
+    elif command == "/draw":
+        parts = text.split(" ", 1)
+        if len(parts) < 2:
+            return "🎨 أرسل الأمر هكذا: /draw وصف الصورة التي تريدها"
+        prompt = await ask_groq(DRAW_PROMPT, user_id, user_first_name, parts[1])
+        return ("🎨 صورة من خيال مسلم:", prompt)
+    elif command == "/quran": return await ask_groq(QURAN_PROMPT, user_id, user_first_name)
+    elif command == "/hadith": return await ask_groq(HADITH_PROMPT, user_id, user_first_name)
+    elif command == "/dua": return await ask_groq(DUA_PROMPT, user_id, user_first_name)
+    elif command == "/naseeha": return await ask_groq(NASEHA_PROMPT, user_id, user_first_name)
+    elif command == "/tafsir": return await ask_groq(TAFSIR_PROMPT, user_id, user_first_name)
+    elif command == "/azkar": return await ask_groq(AZKAR_PROMPT, user_id, user_first_name)
+    elif command == "/seerah": return await ask_groq(SEERAH_PROMPT, user_id, user_first_name)
     elif command == "/prayer_times":
-        user_data = get_user_data(user_id)
-        city = user_data.get("city", "الدار البيضاء")
+        city = get_user_data(user_id).get("city", "الدار البيضاء")
         return await get_real_prayer_times(city)
-    elif command == "/iqra":
-        return await ask_groq(BOOK_PROMPT, user_id, user_first_name)
-    elif command == "/random":
-        return await ask_groq(RANDOM_PROMPT, user_id, user_first_name)
+    elif command == "/iqra": return await ask_groq(BOOK_PROMPT, user_id, user_first_name)
+    elif command == "/random": return await ask_groq(RANDOM_PROMPT, user_id, user_first_name)
     elif command == "/help":
         return (
-            f"🕌 أهلاً {user_first_name}، هذه قائمة المساعدة:\n\n"
-            "/quran - آية عشوائية وتفسيرها\n"
-            "/hadith - حديث شريف وشرحه\n"
-            "/dua - دعاء مبارك\n"
-            "/naseeha - نصيحة اليوم\n"
-            "/tafsir - تفسير آية\n"
-            "/azkar - ذكر وفضله\n"
-            "/seerah - من السيرة النبوية\n"
-            "/iqra - ملخص كتاب\n"
-            "/prayer_times - مواقيت الصلاة\n"
-            "/setcity مدينة - تعيين مدينتك\n"
-            "/random - خليط إيماني\n"
-            "/info - عن البوت"
+            f"🕌 أهلاً {user_first_name}:\n\n"
+            "/quran /hadith /dua /naseeha\n"
+            "/tafsir /azkar /seerah /iqra\n"
+            "/prayer_times /setcity /random\n"
+            "/draw وصف – صنع صورة بالذكاء الاصطناعي 🎨\n"
+            "أرسل صورة – قراءة وتحليل الصور 👁️"
         )
     return None
 
-# ==================== خادم FastAPI ====================
 app = FastAPI()
 
 @app.post("/webhook")
@@ -255,16 +257,22 @@ async def webhook(request: Request):
         user_id = update.effective_user.id
         user_first_name = update.message.from_user.first_name or "صديقي"
 
-        # حفظ الاسم تلقائيا في الذاكرة طويلة المدى
         save_user_data(user_id, "name", user_first_name)
 
-        # تحويل الصوت إلى نص
+        # 👁️ صورة
+        if update.message.photo:
+            await bot.send_message(chat_id, "👁️ جارٍ تحليل الصورة...")
+            photo_file = await update.message.photo[-1].get_file()
+            img_bytes = await photo_file.download_as_bytearray()
+            description = await analyze_image(bytes(img_bytes), user_first_name)
+            await bot.send_message(chat_id, description)
+            return {"status": "ok"}
+
+        # 🎙️ صوت
         if update.message.voice:
             file = await update.message.voice.get_file()
             file_path = f"voice_{user_id}.ogg"
             await file.download_to_drive(file_path)
-
-            # فتح الملف الصوتي وإرساله إلى Groq
             with open(file_path, "rb") as audio_file:
                 transcription = groq_client.audio.transcriptions.create(
                     model="whisper-large-v3",
@@ -273,32 +281,51 @@ async def webhook(request: Request):
                 )
             text = transcription.text
             os.remove(file_path)
-            logger.info(f"🎙️ صوت من {user_first_name}: {text}")
-
+            logger.info(f"🎙️ صوت: {text}")
             reply = await ask_groq(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
             await bot.send_message(chat_id, reply)
             return {"status": "ok"}
 
-        # التعامل مع النص
+        # 📝 نص
         if update.message.text:
             text = update.message.text
-            logger.info(f"رسالة من {user_first_name} ({chat_id}): {text}")
-
-            # تحليل المشاعر
-            sentiment = await analyze_sentiment(text)
-            logger.info(f"شعور {user_first_name}: {sentiment}")
+            logger.info(f"رسالة من {user_first_name}: {text}")
 
             command_reply = await handle_command(text, user_first_name, user_id)
+
+            # 🎨 إذا كان أمراً رسمياً للرسم
+            if command_reply and isinstance(command_reply, tuple):
+                caption, prompt = command_reply
+                img_url = await generate_image(prompt)
+                if img_url:
+                    await bot.send_photo(chat_id, photo=img_url, caption=f"🖼️ {user_first_name}، هذه صورتك!")
+                else:
+                    await bot.send_message(chat_id, "⚠️ فشل توليد الصورة.")
+                return {"status": "ok"}
+
             if command_reply:
                 await bot.send_message(chat_id, command_reply)
-            else:
-                reply = await ask_groq(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
-                # تعديل الرد بناء على المشاعر
-                if sentiment == "سلبي":
-                    reply = f"🤲 أشعر بك يا {user_first_name}...\n\n{reply}"
-                elif sentiment == "إيجابي":
-                    reply = f"😊 جميل يا {user_first_name}!\n\n{reply}"
-                await bot.send_message(chat_id, reply)
+                return {"status": "ok"}
+
+            # 🔍 كشف نية الرسم دون أمر
+            draw_prompt = detect_draw_intent(text)
+            if draw_prompt:
+                desc = await ask_groq(DRAW_PROMPT, user_id, user_first_name, draw_prompt)
+                img_url = await generate_image(desc)
+                if img_url:
+                    await bot.send_photo(chat_id, photo=img_url, caption=f"🎨 تفضل يا {user_first_name}!")
+                else:
+                    await bot.send_message(chat_id, "⚠️ فشل توليد الصورة.")
+                return {"status": "ok"}
+
+            # 💬 محادثة عامة
+            sentiment = await analyze_sentiment(text)
+            reply = await ask_groq(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
+            if sentiment == "سلبي":
+                reply = f"🤲 أشعر بك يا {user_first_name}...\n\n{reply}"
+            elif sentiment == "إيجابي":
+                reply = f"😊 جميل يا {user_first_name}!\n\n{reply}"
+            await bot.send_message(chat_id, reply)
 
         return {"status": "ok"}
     except Exception as e:
