@@ -15,20 +15,30 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # اختياري لتحليل الصور والصوت
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")          # الأساسي – أسرع مزود
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")      # احتياطي
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")                  # اختياري للصوت وتحليل الصور
 
-if not BOT_TOKEN or not OPENROUTER_API_KEY:
-    raise RuntimeError("يجب تعيين BOT_TOKEN و OPENROUTER_API_KEY في متغيرات البيئة")
+if not BOT_TOKEN or not CEREBRAS_API_KEY:
+    raise RuntimeError("يجب تعيين BOT_TOKEN و CEREBRAS_API_KEY في متغيرات البيئة")
 
-# إعداد OpenRouter (timeout=20 أسرع)
-client = OpenAI(
-    api_key=OPENROUTER_API_KEY,
-    base_url="https://openrouter.ai/api/v1",
+# --- عميل Cerebras (الأساسي) ---
+cerebras_client = OpenAI(
+    api_key=CEREBRAS_API_KEY,
+    base_url="https://api.cerebras.ai/v1",
     timeout=20.0
 )
 
-# إعداد Groq (اختياري)
+# --- عميل OpenRouter (احتياطي) ---
+openrouter_client = None
+if OPENROUTER_API_KEY:
+    openrouter_client = OpenAI(
+        api_key=OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        timeout=20.0
+    )
+
+# --- عميل Groq (اختياري) ---
 groq_client = None
 if GROQ_API_KEY:
     groq_client = OpenAI(
@@ -66,7 +76,7 @@ def get_user_city(user_id: int) -> str:
     data = load_user_data()
     return data.get(str(user_id), {}).get("city", "الدار البيضاء")
 
-# -------------------- شخصية البوت (مرونة لغوية) --------------------
+# -------------------- شخصية البوت --------------------
 SYSTEM_PROMPT = (
     "أنت 'مسلم العماري'، صديق ذكي ومتوازن. "
     "شخصيتك ودودة، لطيفة، ومتوازنة. تقدم إجابات دقيقة ومفيدة بأسلوب مباشر وواضح. "
@@ -78,9 +88,9 @@ SYSTEM_PROMPT = (
     "تتحدث بالعربية الفصحى الواضحة بشكل افتراضي. إذا خاطبك المستخدم بالعامية المصرية أو المغربية، يمكنك الرد بنفس الأسلوب. لا تخلط الفصحى بالعامية في نفس الرد."
 )
 
-# -------------------- قائمة النماذج (الأسرع أولاً) --------------------
-FREE_MODELS = [
-    "mistralai/mistral-small-3.1-24b-instruct:free",  # الأسرع
+# -------------------- قائمة النماذج الاحتياطية على OpenRouter --------------------
+OPENROUTER_FREE_MODELS = [
+    "mistralai/mistral-small-3.1-24b-instruct:free",
     "meta-llama/llama-3.3-70b-instruct:free",
     "qwen/qwen3-next-80b-a3b-instruct:free",
     "nvidia/nemotron-3-nano-30b-a3b:free",
@@ -133,7 +143,7 @@ def detect_draw_intent(text: str) -> str | None:
                 return parts[1].strip()
     return None
 
-# -------------------- دالة الذكاء العامة --------------------
+# -------------------- دالة الذكاء العامة (Cerebras أساسي، OpenRouter احتياطي) --------------------
 async def ask_ai(user_id: int, user_name: str, user_message: str) -> str:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -142,27 +152,45 @@ async def ask_ai(user_id: int, user_name: str, user_message: str) -> str:
 
     messages.append({"role": "user", "content": user_message})
 
-    for model in FREE_MODELS:
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.85,
-                max_tokens=500,  # رد أسرع بكثير
-                timeout=20.0
-            )
-            reply = response.choices[0].message.content.strip()
+    # المحاولة 1: Cerebras
+    try:
+        response = cerebras_client.chat.completions.create(
+            model="llama3.1-70b",
+            messages=messages,
+            temperature=0.85,
+            max_tokens=500,
+            timeout=15.0
+        )
+        reply = response.choices[0].message.content.strip()
+        history = user_histories[user_id]
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": reply})
+        if len(history) > MAX_HISTORY * 2:
+            user_histories[user_id] = history[-(MAX_HISTORY * 2):]
+        return reply
+    except Exception as e:
+        logger.warning(f"فشل Cerebras: {e}")
 
-            # تحديث الذاكرة
-            history = user_histories[user_id]
-            history.append({"role": "user", "content": user_message})
-            history.append({"role": "assistant", "content": reply})
-            if len(history) > MAX_HISTORY * 2:
-                user_histories[user_id] = history[-(MAX_HISTORY * 2):]
-
-            return reply
-        except Exception as e:
-            logger.warning(f"فشل النموذج {model}: {e}")
+    # المحاولة 2: OpenRouter
+    if openrouter_client:
+        for model in OPENROUTER_FREE_MODELS:
+            try:
+                response = openrouter_client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.85,
+                    max_tokens=500,
+                    timeout=15.0
+                )
+                reply = response.choices[0].message.content.strip()
+                history = user_histories[user_id]
+                history.append({"role": "user", "content": user_message})
+                history.append({"role": "assistant", "content": reply})
+                if len(history) > MAX_HISTORY * 2:
+                    user_histories[user_id] = history[-(MAX_HISTORY * 2):]
+                return reply
+            except Exception as e:
+                logger.warning(f"فشل نموذج OpenRouter {model}: {e}")
 
     return "⚠️ جميع خدمات الذكاء الاصطناعي مشغولة حالياً. حاول لاحقاً."
 
