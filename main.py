@@ -115,7 +115,7 @@ async def analyze_image(image_bytes: bytes, user_name: str) -> str | None:
                 ]
             }],
             temperature=0.5,
-            max_tokens=1500,
+            max_tokens=500,
             timeout=20.0
         )
         return response.choices[0].message.content
@@ -148,7 +148,7 @@ async def ask_ai(user_id: int, user_name: str, user_message: str) -> str:
                 model=model,
                 messages=messages,
                 temperature=0.85,
-                max_tokens=1500,   # أسرع قليلاً
+                max_tokens=500,  # رد أسرع بكثير
                 timeout=20.0
             )
             reply = response.choices[0].message.content.strip()
