@@ -1,6 +1,5 @@
 import os
 import logging
-import random
 from fastapi import FastAPI, Request, HTTPException
 from openai import OpenAI
 from telegram import Update, Bot
@@ -25,164 +24,20 @@ groq_client = OpenAI(
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 bot: Bot = telegram_app.bot
 
-# ==================== المحتوى الإسلامي ====================
-QURAN_VERSES = [
-    "﷽\n\n(إِنَّ مَعَ الْعُسْرِ يُسْرًا) 🍃 - سورة الشرح",
-    "﷽\n\n(فَاذْكُرُونِي أَذْكُرْكُمْ وَاشْكُرُوا لِي وَلَا تَكْفُرُونِ) 🤲 - سورة البقرة",
-    "﷽\n\n(إِنَّ اللَّهَ مَعَ الصَّابِرِينَ) 💪 - سورة البقرة",
-    "﷽\n\n(وَمَن يَتَّقِ اللَّهَ يَجْعَل لَّهُ مَخْرَجًا وَيَرْزُقْهُ مِنْ حَيْثُ لَا يَحْتَسِبُ) 🌟 - سورة الطلاق",
-    "﷽\n\n(ادْعُونِي أَسْتَجِبْ لَكُمْ) 🤲 - سورة غافر",
-    "﷽\n\n(فَإِنَّ مَعَ الْعُسْرِ يُسْرًا إِنَّ مَعَ الْعُسْرِ يُسْرًا) ✨ - سورة الشرح",
-]
-
-AHADITH = [
-    "من صلى الفجر في جماعة فهو في ذمة الله. 🕌 (رواه مسلم)",
-    "الكلمة الطيبة صدقة. 🌸 (متفق عليه)",
-    "لا تغضب ولك الجنة. 😊 (رواه البخاري)",
-    "من كان يؤمن بالله واليوم الآخر فليقل خيراً أو ليصمت. 🤫 (متفق عليه)",
-    "تبسمك في وجه أخيك صدقة. 😊 (رواه الترمذي)",
-]
-
-DUAS = [
-    "اللهم إني أسألك الهدى والتقى والعفاف والغنى 🤲",
-    "رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الْآخِرَةِ حَسَنَةً وَقِنَا عَذَابَ النَّارِ 🌸",
-    "اللهم اغفر لي ولوالدي وللمؤمنين يوم يقوم الحساب 🕌",
-    "اللهم إني أعوذ بك من الهم والحزن، وأعوذ بك من العجز والكسل 🍃",
-]
-
-NASEHA = [
-    "حافظ على الصلوات الخمس، فهي عماد الدين. 🕌",
-    "اقرأ ولو صفحة من القرآن يومياً. 📖",
-    "بر الوالدين من أعظم القربات إلى الله. 💝",
-    "الصدقة تطفئ غضب الرب. 💰",
-    "ذكر الله يطمئن القلوب. 🧘",
-]
-
-AZKAR = [
-    "سبحان الله وبحمده، سبحان الله العظيم (ثقيلتان في الميزان)",
-    "لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير (كنز من كنوز الجنة)",
-    "أستغفر الله الذي لا إله إلا هو الحي القيوم وأتوب إليه (غفرت ذنوبه)",
-]
-
-SEERAH = [
-    "عندما دخل النبي ﷺ مكة فاتحاً، قال لأهلها: (اذهبوا فأنتم الطلقاء). 🌿",
-    "كان النبي ﷺ يقوم الليل حتى تتفطر قدماه شكراً لله. 🌙",
-    "حين أُوذي في الطائف، قال: (اللهم إني أشكو إليك ضعف قوتي) ثم عفا عنهم. 💚",
-]
-
-TAFSIR = [
-    "﷽\n(إِنَّ مَعَ الْعُسْرِ يُسْرًا): بعد الضيق يأتي الفرج، وعد الله لا يتخلف.",
-    "﷽\n(ادْعُونِي أَسْتَجِبْ لَكُمْ): الله قريب يجيب دعوة الداعي إذا دعاه.",
-]
-
-BOOKS = [
-    "📚 رياض الصالحين - للإمام النووي، يجمع أحاديث في الأخلاق والعبادات.",
-    "📚 الرحيق المختوم - للمباركفوري، سيرة نبوية شاملة.",
-]
-
-PRAYER_TIMES_MSG = (
-    "🕌 تنبيه الصلاة\n\n"
-    "الصلاة خير من النوم.\n"
-    "للمواقيت الدقيقة، استخدم تطبيقاً موثوقاً حسب مدينتك.\n"
-    "ولا تنس: (إِنَّ الصَّلَاةَ كَانَتْ عَلَى الْمُؤْمِنِينَ كِتَابًا مَّوْقُوتًا).\n\n"
-    "حافظ على صلاتك! 🤲"
-)
-
-# ==================== دالة الأوامر (ردود نص عادي) ====================
-async def handle_command(text: str) -> str | None:
-    command = text.split()[0].lower()
-
-    if command == "/start":
-        return (
-            "🕋 مسلم العماري 🕋\n\n"
-            "📿 أهلاً بك في رحاب المعرفة الإسلامية!\n\n"
-            "أنا مسلم، مساعدك الذكي. أقدم لك:\n"
-            "🔥 نصائح واستشارات دينية ودنيوية\n"
-            "🕋 آيات وأحاديث وأدعية\n"
-            "👑 معلومات قيمة بأسلوب شيق\n\n"
-            "📜 الأوامر:\n"
-            "/quran | /hadith | /dua | /naseeha\n"
-            "/tafsir | /azkar | /seerah | /iqra\n"
-            "/prayer_times | /random | /info"
-        )
-    elif command == "/help":
-        return (
-            "🕌 قائمة المساعدة\n\n"
-            "• اسألني أي سؤال في الدين أو الحياة.\n"
-            "• الأوامر:\n"
-            "  /quran - آية عشوائية\n"
-            "  /hadith - حديث شريف\n"
-            "  /dua - دعاء مبارك\n"
-            "  /naseeha - نصيحة اليوم\n"
-            "  /tafsir - تفسير آية\n"
-            "  /azkar - ذكر وفضله\n"
-            "  /seerah - من السيرة\n"
-            "  /iqra - ملخص كتاب\n"
-            "  /prayer_times - تنبيه الصلاة\n"
-            "  /random - مزيج عشوائي\n"
-            "  /info - عن البوت"
-        )
-    elif command == "/info":
-        return (
-            "🛡️ عن البوت\n\n"
-            "الاسم: مسلم العماري\n"
-            "الإصدار: 2.0 المستقرة\n"
-            "التخصص: مرجعية عربية مغربية إسلامية\n"
-            "المطور: أنت! 👑\n"
-            "التقنية: Groq AI + Python"
-        )
-    elif command == "/quran":
-        verse = random.choice(QURAN_VERSES)
-        return f"📖 آية من الذكر الحكيم\n\n{verse}"
-    elif command == "/hadith":
-        hadith = random.choice(AHADITH)
-        return f"🌟 حديث شريف\n\n{hadith}"
-    elif command == "/dua":
-        return f"🤲 دعاء مبارك\n\n{random.choice(DUAS)}"
-    elif command == "/naseeha":
-        return f"📿 نصيحة اليوم\n\n{random.choice(NASEHA)}"
-    elif command == "/tafsir":
-        tafsir = random.choice(TAFSIR)
-        return f"📖 تفسير\n\n{tafsir}"
-    elif command == "/azkar":
-        zekr = random.choice(AZKAR)
-        return f"📿 ذكر وفضله\n\n{zekr}"
-    elif command == "/seerah":
-        return f"🌿 من السيرة النبوية\n\n{random.choice(SEERAH)}"
-    elif command == "/prayer_times":
-        return PRAYER_TIMES_MSG
-    elif command == "/iqra":
-        book = random.choice(BOOKS)
-        return f"📚 كتاب اليوم\n\n{book}"
-    elif command == "/random":
-        items = [
-            f"📖 آية:\n{random.choice(QURAN_VERSES)}",
-            f"🌟 حديث:\n{random.choice(AHADITH)}",
-            f"🤲 دعاء:\n{random.choice(DUAS)}",
-            f"📿 نصيحة:\n{random.choice(NASEHA)}",
-        ]
-        return "🎲 خليط إيماني\n\n" + "\n\n".join(random.sample(items, 3))
+# ==================== دالة الذكاء العام للبوت ====================
+async def ask_groq(system_prompt: str, user_message: str = None) -> str:
+    """الدالة الموحدة لإرسال الطلبات إلى Groq"""
+    messages = [{"role": "system", "content": system_prompt}]
+    if user_message:
+        messages.append({"role": "user", "content": user_message})
     else:
-        return None
+        # إذا لم تكن هناك رسالة مستخدم، فهذا أمر يتطلب رداً فورياً من النظام
+        messages.append({"role": "user", "content": "أعطني الرد مباشرة."})
 
-# ==================== دالة الذكاء العام ====================
-async def ask_groq(user_message: str) -> str:
     try:
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "أنت 'مسلم العماري'، بوت ذكي ودود يقدم محتوى إسلامياً ثرياً. "
-                        "تستخدم أسلوباً لطيفاً ومباشراً بالعربية، مع رموز تعبيرية خفيفة. "
-                        "تركز على النصائح الدينية والأخلاقية والقيم الإسلامية. "
-                        "إذا سألك أحد عن نفسك، قل أنك بوت إسلامي صمم لخدمة المسلمين. "
-                        "ابتعد عن الفتاوى، وأحل على العلماء عند الحاجة."
-                    )
-                },
-                {"role": "user", "content": user_message}
-            ],
+            messages=messages,
             temperature=0.9,
             max_tokens=2000
         )
@@ -190,6 +45,129 @@ async def ask_groq(user_message: str) -> str:
     except Exception as e:
         logger.error(f"Groq error: {e}")
         return "⚠️ حدث خطأ مؤقت، جرب مرة أخرى."
+
+# ==================== نظام الشخصية العامة (متوازن وغير متشدد) ====================
+MAIN_SYSTEM_PROMPT = (
+    "أنت 'مسلم العماري'، صديق ذكي ومتوازن. "
+    "هويتك الإسلامية جزء من شخصيتك، لكنك تتحدث في كل أمور الحياة ببساطة وذكاء. "
+    "تقدم نصائح مفيدة في الدين، العلاقات، العمل، الصحة، والتفكير الإيجابي. "
+    "أسلوبك عصري، مباشر، ودود، وتستخدم الرموز التعبيرية باعتدال. "
+    "أنت لست شيخاً ولا مفتياً، بل صديق حكيم يستأنس برأيه. "
+    "إذا سُئلت عن الفتاوى، اعتذر بلطف وأحل على أهل العلم. "
+    "تحدث دائماً بالعربية."
+)
+
+# ==================== أنظمة الأوامر (للتنويع وعدم التكرار) ====================
+QURAN_PROMPT = (
+    "أنت بوت 'مسلم العماري'. أعطني آية قرآنية عشوائية ومؤثرة مع تفسير مبسط وحديث. "
+    "ابدأ الرد بـ '📖 آية من الذكر الحكيم'."
+)
+
+HADITH_PROMPT = (
+    "أنت بوت 'مسلم العماري'. أعطني حديثاً نبوياً شريفاً عشوائياً مع شرح مختصر لمعناه. "
+    "ابدأ الرد بـ '🌟 حديث شريف'."
+)
+
+DUA_PROMPT = (
+    "أنت بوت 'مسلم العماري'. أعطني دعاءً جميلاً وشاملاً من القرآن أو السنة. "
+    "ابدأ الرد بـ '🤲 دعاء مبارك'."
+)
+
+NASEHA_PROMPT = (
+    "أنت بوت 'مسلم العماري'. أعطني نصيحة حياتية أو دينية عميقة وملهمة بأسلوب معاصر. "
+    "ابدأ الرد بـ '📿 نصيحة اليوم'."
+)
+
+AZKAR_PROMPT = (
+    "أنت بوت 'مسلم العماري'. أعطني ذكراً من الأذكار النبوية مع فضله. "
+    "ابدأ الرد بـ '📿 ذكر وفضله'."
+)
+
+SEERAH_PROMPT = (
+    "أنت بوت 'مسلم العماري'. احك لي موقفاً أو حدثاً عظيماً من السيرة النبوية. "
+    "ابدأ الرد بـ '🌿 من السيرة النبوية'."
+)
+
+TAFSIR_PROMPT = (
+    "أنت بوت 'مسلم العماري'. أعطني آية قرآنية عشوائية مع تفسيرها الميسر. "
+    "ابدأ الرد بـ '📖 تفسير'."
+)
+
+BOOK_PROMPT = (
+    "أنت بوت 'مسلم العماري'. اقترح علي كتاباً إسلامياً أو ثقافياً مفيداً مع وصف مختصر له. "
+    "ابدأ الرد بـ '📚 كتاب اليوم'."
+)
+
+PRAYER_TIMES_PROMPT = (
+    "أنت بوت 'مسلم العماري'. اكتب رسالة تذكيرية جميلة عن أهمية الصلاة والحفاظ على مواقيتها. "
+    "ابدأ الرد بـ '🕌 تنبيه الصلاة'."
+)
+
+RANDOM_PROMPT = (
+    "أنت بوت 'مسلم العماري'. أرسل لي خليطاً إيمانياً مميزاً: آية، وحديثاً، ودعاءً، ونصيحة. "
+    "ابدأ الرد بـ '🎲 خليط إيماني'."
+)
+
+# ==================== دالة معالجة الأوامر ====================
+async def handle_command(text: str, user_first_name: str) -> str | None:
+    command = text.split()[0].lower()
+
+    if command == "/start":
+        return (
+            f"🕋 أهلاً بك يا {user_first_name}!\n\n"
+            "أنا مسلم، مساعدك الشخصي. هنا لتسأل عن أي شيء:\n"
+            "🔥 نصائح في الحياة والدين\n"
+            "🕋 آيات وأحاديث وأدعية\n"
+            "👑 محادثة ذكية ومفيدة\n\n"
+            "📜 جرب الأوامر:\n"
+            "/quran | /hadith | /dua | /naseeha\n"
+            "/tafsir | /azkar | /seerah | /iqra\n"
+            "/prayer_times | /random | /info"
+        )
+    elif command == "/info":
+        # هنا نستخدم اسم المستخدم الحقيقي
+        return (
+            f"🛡️ أهلاً {user_first_name}،\n\n"
+            "أنا مسلم العماري، رفيقك الذكي.\n"
+            "مهمتي أكون معك بالنصيحة والمعلومة.\n"
+            "اسألني اللي يخطر ببالك. 🤲✨"
+        )
+    elif command == "/quran":
+        return await ask_groq(QURAN_PROMPT)
+    elif command == "/hadith":
+        return await ask_groq(HADITH_PROMPT)
+    elif command == "/dua":
+        return await ask_groq(DUA_PROMPT)
+    elif command == "/naseeha":
+        return await ask_groq(NASEHA_PROMPT)
+    elif command == "/tafsir":
+        return await ask_groq(TAFSIR_PROMPT)
+    elif command == "/azkar":
+        return await ask_groq(AZKAR_PROMPT)
+    elif command == "/seerah":
+        return await ask_groq(SEERAH_PROMPT)
+    elif command == "/prayer_times":
+        return await ask_groq(PRAYER_TIMES_PROMPT)
+    elif command == "/iqra":
+        return await ask_groq(BOOK_PROMPT)
+    elif command == "/random":
+        return await ask_groq(RANDOM_PROMPT)
+    elif command == "/help":
+        return (
+            "🕌 قائمة المساعدة:\n\n"
+            "/quran - آية عشوائية وتفسيرها\n"
+            "/hadith - حديث شريف وشرحه\n"
+            "/dua - دعاء مبارك\n"
+            "/naseeha - نصيحة اليوم\n"
+            "/tafsir - تفسير آية\n"
+            "/azkar - ذكر وفضله\n"
+            "/seerah - من السيرة النبوية\n"
+            "/iqra - ملخص كتاب\n"
+            "/prayer_times - تذكير بالصلاة\n"
+            "/random - خليط إيماني\n"
+            "/info - عن البوت"
+        )
+    return None
 
 # ==================== خادم FastAPI ====================
 app = FastAPI()
@@ -203,18 +181,19 @@ async def webhook(request: Request):
         if update.message and update.message.text:
             chat_id = update.message.chat_id
             text = update.message.text
+            # نستخرج اسم المستخدم الحقيقي
+            user_first_name = update.message.from_user.first_name or "صديقي"
+
             logger.info(f"رسالة من {chat_id}: {text}")
 
-            # فحص الأوامر المحلية أولاً
-            command_reply = await handle_command(text)
+            # فحص الأوامر
+            command_reply = await handle_command(text, user_first_name)
             if command_reply:
                 await bot.send_message(chat_id, command_reply)
             else:
-                # دردشة عامة مع Groq
-                groq_reply = await ask_groq(text)
-                # نرسل الرد مع توقيع بسيط
-                full_reply = f"✨ مسلم العماري يقول:\n\n{groq_reply}\n\n▫️ تفضل بسؤالي عن أي شيء آخر!"
-                await bot.send_message(chat_id, full_reply)
+                # دردشة عامة طبيعية (بدون توقيع المجلة)
+                reply = await ask_groq(MAIN_SYSTEM_PROMPT, text)
+                await bot.send_message(chat_id, reply)
 
         return {"status": "ok"}
     except Exception as e:
@@ -223,4 +202,4 @@ async def webhook(request: Request):
 
 @app.get("/")
 def index():
-    return {"message": "🕋 مسلم العماري يعمل!"}
+    return {"message": "مسلم العماري يعمل!"}
