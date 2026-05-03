@@ -3,6 +3,7 @@ import json
 import logging
 import base64
 import random
+import time
 import requests
 from collections import defaultdict
 from fastapi import FastAPI, Request, HTTPException
@@ -10,29 +11,30 @@ from openai import OpenAI
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder
 
+# ==================== الإعدادات ====================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not BOT_TOKEN or not GEMINI_API_KEY:
-    raise RuntimeError("يجب تعيين BOT_TOKEN و GEMINI_API_KEY في متغيرات البيئة")
+if not BOT_TOKEN or not GROQ_API_KEY:
+    raise RuntimeError("يجب تعيين BOT_TOKEN و GROQ_API_KEY في متغيرات البيئة")
 
-# عميل Google Gemini (مجاني وسخي)
-gemini_client = OpenAI(
-    api_key=GEMINI_API_KEY,
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+# ==================== عميل Groq ====================
+groq_client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1"
 )
 
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 bot: Bot = telegram_app.bot
 
-# الذاكرة المؤقتة
+# ==================== الذاكرة المؤقتة ====================
 user_histories = defaultdict(list)
 MAX_HISTORY_LENGTH = 10
 
-# ذاكرة طويلة المدى
+# ==================== الذاكرة طويلة المدى ====================
 DATA_FILE = "users_data.json"
 
 def load_all_users():
@@ -55,7 +57,7 @@ def get_user_data(user_id: int):
     data = load_all_users()
     return data.get(str(user_id), {"name": "", "city": "الدار البيضاء", "preferences": {}})
 
-# ==================== موجهات الشخصية ====================
+# ==================== موجهات الشخصية والأوامر ====================
 MAIN_SYSTEM_PROMPT = (
     "أنت 'مسلم العماري'، صديق ذكي ومتوازن. "
     "هويتك الإسلامية جزء من شخصيتك، لكنك تتحدث في كل أمور الحياة ببساطة وذكاء. "
@@ -77,28 +79,27 @@ TAFSIR_PROMPT = "أنت 'مسلم العماري'. أعطني آية قرآني�
 BOOK_PROMPT = "أنت 'مسلم العماري'. اقترح علي كتاباً إسلامياً أو ثقافياً مفيداً مع وصف مختصر له. ابدأ الرد بـ '📚 كتاب اليوم'."
 RANDOM_PROMPT = "أنت 'مسلم العماري'. أرسل لي خليطاً إيمانياً مميزاً: آية، وحديثاً، ودعاءً، ونصيحة. ابدأ الرد بـ '🎲 خليط إيماني'."
 
-# ==================== توليد 3 صور (Pollinations + عشوائية) ====================
+# ==================== توليد 3 صور (محسّن بعدم التكرار) ====================
 async def generate_three_images(prompt: str) -> list:
-    """يولد 3 صور مختلفة باستخدام Pollinations مع بذور عشوائية"""
     urls = []
     base_url = "https://image.pollinations.ai/prompt/"
     for i in range(3):
-        seed = random.randint(1, 99999)  # بذرة عشوائية لتغيير النتيجة
+        seed = random.randint(1, 99999)
         url = f"{base_url}{prompt}?width=768&height=768&seed={seed}&nologo=true"
         urls.append(url)
     return urls
 
-# ==================== تحليل الصور (باستخدام Gemini Vision) ====================
+# ==================== تحليل الصور (Groq Vision) ====================
 async def analyze_image(image_bytes: bytes, user_first_name: str) -> str:
     try:
         encoded = base64.b64encode(image_bytes).decode("utf-8")
-        response = gemini_client.chat.completions.create(
-            model="gemini-1.5-flash",
+        response = groq_client.chat.completions.create(
+            model="llama-3.2-90b-vision-preview",
             messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"أنت 'مسلم العماري'. حلل هذه الصورة بالعربية. صف ما تراه فيها بأسلوب ودود. إذا كان فيها نص، فاقرأه لي. تحدث كصديق ينظر إلى الصورة مع {user_first_name}."},
+                        {"type": "text", "text": f"أنت 'مسلم العماري'. حلل هذه الصورة بالعربية. صف ما تراه فيها بأسلوب ودود. إذا كان فيها نص، فاقرأه لي. إذا كان فيها مشهد، فصفه. تحدث كصديق ينظر إلى الصورة مع {user_first_name}."},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
                     ]
                 }
@@ -129,8 +130,8 @@ async def get_real_prayer_times(city: str, country: str = "Morocco"):
         logger.error(f"Prayer times error: {e}")
         return "⚠️ حدث خطأ في جلب مواقيت الصلاة."
 
-# ==================== دالة الذكاء العام (Gemini) ====================
-async def ask_gemini(system_prompt: str, user_id: int, user_first_name: str, user_message: str = None):
+# ==================== دالة الذكاء العام (مع التعامل مع حد الاستخدام) ====================
+async def ask_groq_with_fallback(system_prompt: str, user_id: int, user_first_name: str, user_message: str = None):
     messages = [{"role": "system", "content": system_prompt}]
     messages.append({"role": "system", "content": f"أنت تتحدث الآن مع صديقك {user_first_name}."})
 
@@ -141,31 +142,41 @@ async def ask_gemini(system_prompt: str, user_id: int, user_first_name: str, use
     else:
         messages.append({"role": "user", "content": "أعطني الرد مباشرة."})
 
-    try:
-        response = gemini_client.chat.completions.create(
-            model="gemini-1.5-flash",
-            messages=messages,
-            temperature=0.9,
-            max_tokens=2000
-        )
-        reply = response.choices[0].message.content
+    # قائمة النماذج للتجربة: النموذج الأساسي ثم الاحتياطي
+    models_to_try = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    
+    for attempt, model in enumerate(models_to_try):
+        try:
+            response = groq_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.9,
+                max_tokens=2000
+            )
+            reply = response.choices[0].message.content
 
-        if user_message:
-            history = user_histories[user_id]
-            history.append({"role": "user", "content": user_message})
-            history.append({"role": "assistant", "content": reply})
-            if len(history) > MAX_HISTORY_LENGTH * 2:
-                user_histories[user_id] = history[-(MAX_HISTORY_LENGTH * 2):]
+            if user_message:
+                history = user_histories[user_id]
+                history.append({"role": "user", "content": user_message})
+                history.append({"role": "assistant", "content": reply})
+                if len(history) > MAX_HISTORY_LENGTH * 2:
+                    user_histories[user_id] = history[-(MAX_HISTORY_LENGTH * 2):]
 
-        return reply
-    except Exception as e:
-        logger.error(f"Gemini error: {e}")
-        return "⚠️ حدث خطأ مؤقت، جرب مرة أخرى."
+            return reply
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str and attempt == 0:
+                logger.warning(f"النموذج {model} مشغول، تجربة النموذج الاحتياطي...")
+                time.sleep(1)
+                continue
+            else:
+                logger.error(f"فشل بعد {attempt+1} محاولات: {e}")
+                return "⚠️ حدث خطأ مؤقت، جرب مرة أخرى."
 
-# ==================== تحليل المشاعر (أبسط بدون استدعاء إضافي) ====================
+# ==================== تحليل المشاعر ====================
 def analyze_sentiment_simple(text: str) -> str:
-    positive = ["😊", "😂", "👍", "❤️", "رائع", "جميل", "الحمد لله"]
-    negative = ["😢", "😡", "حزين", "متعب", "سيء", "مشكلة"]
+    positive = ["😊", "😂", "👍", "❤️", "رائع", "جميل", "الحمد لله", "ممتاز"]
+    negative = ["😢", "😡", "حزين", "متعب", "سيء", "مشكلة", "مريض"]
     for w in positive:
         if w in text: return "إيجابي"
     for w in negative:
@@ -201,23 +212,23 @@ async def handle_command(text: str, user_first_name: str, user_id: int):
         if len(parts) < 2: return "🎨 أرسل: /draw وصف"
         urls = await generate_three_images(parts[1])
         return ("🎨 صورك جاهزة:", urls)
-    elif cmd == "/quran": return await ask_gemini(QURAN_PROMPT, user_id, user_first_name)
-    elif cmd == "/hadith": return await ask_gemini(HADITH_PROMPT, user_id, user_first_name)
-    elif cmd == "/dua": return await ask_gemini(DUA_PROMPT, user_id, user_first_name)
-    elif cmd == "/naseeha": return await ask_gemini(NASEHA_PROMPT, user_id, user_first_name)
-    elif cmd == "/tafsir": return await ask_gemini(TAFSIR_PROMPT, user_id, user_first_name)
-    elif cmd == "/azkar": return await ask_gemini(AZKAR_PROMPT, user_id, user_first_name)
-    elif cmd == "/seerah": return await ask_gemini(SEERAH_PROMPT, user_id, user_first_name)
+    elif cmd == "/quran": return await ask_groq_with_fallback(QURAN_PROMPT, user_id, user_first_name)
+    elif cmd == "/hadith": return await ask_groq_with_fallback(HADITH_PROMPT, user_id, user_first_name)
+    elif cmd == "/dua": return await ask_groq_with_fallback(DUA_PROMPT, user_id, user_first_name)
+    elif cmd == "/naseeha": return await ask_groq_with_fallback(NASEHA_PROMPT, user_id, user_first_name)
+    elif cmd == "/tafsir": return await ask_groq_with_fallback(TAFSIR_PROMPT, user_id, user_first_name)
+    elif cmd == "/azkar": return await ask_groq_with_fallback(AZKAR_PROMPT, user_id, user_first_name)
+    elif cmd == "/seerah": return await ask_groq_with_fallback(SEERAH_PROMPT, user_id, user_first_name)
     elif cmd == "/prayer_times":
         city = get_user_data(user_id).get("city", "الدار البيضاء")
         return await get_real_prayer_times(city)
-    elif cmd == "/iqra": return await ask_gemini(BOOK_PROMPT, user_id, user_first_name)
-    elif cmd == "/random": return await ask_gemini(RANDOM_PROMPT, user_id, user_first_name)
+    elif cmd == "/iqra": return await ask_groq_with_fallback(BOOK_PROMPT, user_id, user_first_name)
+    elif cmd == "/random": return await ask_groq_with_fallback(RANDOM_PROMPT, user_id, user_first_name)
     elif cmd == "/help":
         return "🕌 /quran /hadith /dua /naseeha /tafsir /azkar /seerah /iqra /prayer_times /random /draw"
     return None
 
-# ==================== FastAPI ====================
+# ==================== خادم FastAPI ====================
 app = FastAPI()
 
 @app.post("/webhook")
@@ -241,9 +252,22 @@ async def webhook(request: Request):
             await bot.send_message(chat_id, description)
             return {"status": "ok"}
 
-        # صوت (مبسط بدون معالجة)
+        # صوت
         if update.message.voice:
-            await bot.send_message(chat_id, "🎙️ الصوت غير مدعوم حالياً، اكتب رسالتك نصياً.")
+            file = await update.message.voice.get_file()
+            file_path = f"voice_{user_id}.ogg"
+            await file.download_to_drive(file_path)
+            with open(file_path, "rb") as audio_file:
+                transcription = groq_client.audio.transcriptions.create(
+                    model="whisper-large-v3",
+                    file=audio_file,
+                    language="ar"
+                )
+            text = transcription.text
+            os.remove(file_path)
+            logger.info(f"🎙️ صوت: {text}")
+            reply = await ask_groq_with_fallback(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
+            await bot.send_message(chat_id, reply)
             return {"status": "ok"}
 
         # نص
@@ -255,7 +279,6 @@ async def webhook(request: Request):
             if command_reply:
                 if isinstance(command_reply, tuple):
                     caption, urls = command_reply
-                    # إرسال ما يصل إلى 3 صور كألبوم
                     if urls:
                         media_group = [{"type": "photo", "media": url, "caption": caption if i == 0 else ""} for i, url in enumerate(urls)]
                         await bot.send_media_group(chat_id, media_group)
@@ -276,7 +299,7 @@ async def webhook(request: Request):
 
             # محادثة عامة
             sentiment = analyze_sentiment_simple(text)
-            reply = await ask_gemini(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
+            reply = await ask_groq_with_fallback(MAIN_SYSTEM_PROMPT, user_id, user_first_name, text)
             if sentiment == "سلبي":
                 reply = f"🤲 أشعر بك يا {user_first_name}...\n\n{reply}"
             elif sentiment == "إيجابي":
@@ -290,4 +313,4 @@ async def webhook(request: Request):
 
 @app.get("/")
 def index():
-    return {"message": "مسلم العماري يعمل بقوة Gemini!"}
+    return {"message": "مسلم العماري يعمل بقوة وثبات!"}
