@@ -11,8 +11,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # قراءة المفاتيح من البيئة
-BOT_TOKEN = os.getenv("8757944445:AAF8YJ6Ee3GJ4j6UMuSYG7_A1mGkCpKgI3M")
-DEEPSEEK_API_KEY = os.getenv("sk-0f1733b1ec0043b480b5bc77fa66edf4")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 BASE_URL = "https://api.deepseek.com"
 
 if not BOT_TOKEN or not DEEPSEEK_API_KEY:
