@@ -15,23 +15,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-if not BOT_TOKEN or not OPENROUTER_API_KEY:
-    raise RuntimeError("يجب تعيين BOT_TOKEN و OPENROUTER_API_KEY في متغيرات البيئة")
+if not BOT_TOKEN:
+    raise RuntimeError("يجب تعيين BOT_TOKEN في متغيرات البيئة")
+if not GROQ_API_KEY and not OPENROUTER_API_KEY:
+    raise RuntimeError("يجب تعيين GROQ_API_KEY أو OPENROUTER_API_KEY على الأقل")
 
-client = OpenAI(
-    api_key=OPENROUTER_API_KEY,
-    base_url="https://openrouter.ai/api/v1",
-    timeout=15.0
-)
-
+# إعداد Groq الأساسي
 groq_client = None
 if GROQ_API_KEY:
     groq_client = OpenAI(
         api_key=GROQ_API_KEY,
         base_url="https://api.groq.com/openai/v1",
+        timeout=15.0
+    )
+
+# إعداد OpenRouter الاحتياطي
+openrouter_client = None
+if OPENROUTER_API_KEY:
+    openrouter_client = OpenAI(
+        api_key=OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
         timeout=15.0
     )
 
@@ -73,7 +79,8 @@ SYSTEM_PROMPT = (
     "تتحدث بالعربية الفصحى بشكل افتراضي. إذا خاطبك المستخدم بالعامية، يمكنك الرد بنفس الأسلوب."
 )
 
-FREE_MODELS = [
+# النماذج الاحتياطية في OpenRouter (ستستخدم فقط عند فشل Groq)
+OPENROUTER_FREE_MODELS = [
     "meta-llama/llama-4-maverick:free",
     "mistralai/mistral-small-3.1-24b-instruct:free",
     "meta-llama/llama-3.3-70b-instruct:free",
@@ -123,6 +130,7 @@ def detect_draw_intent(text: str) -> str | None:
                 return parts[1].strip()
     return None
 
+# -------------------- دالة الذكاء العامة (Groq أساسي، OpenRouter احتياطي) --------------------
 async def ask_ai(user_id: int, user_name: str, user_message: str) -> str:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -131,10 +139,11 @@ async def ask_ai(user_id: int, user_name: str, user_message: str) -> str:
 
     messages.append({"role": "user", "content": user_message})
 
-    for model in FREE_MODELS:
+    # المحاولة 1: Groq
+    if groq_client:
         try:
-            response = client.chat.completions.create(
-                model=model,
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
                 messages=messages,
                 temperature=0.85,
                 max_tokens=450,
@@ -150,7 +159,30 @@ async def ask_ai(user_id: int, user_name: str, user_message: str) -> str:
 
             return reply
         except Exception as e:
-            logger.warning(f"فشل النموذج {model}: {e}")
+            logger.warning(f"فشل Groq: {e}")
+
+    # المحاولة 2: OpenRouter (احتياطي)
+    if openrouter_client:
+        for model in OPENROUTER_FREE_MODELS:
+            try:
+                response = openrouter_client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.85,
+                    max_tokens=450,
+                    timeout=12.0
+                )
+                reply = response.choices[0].message.content.strip()
+
+                history = user_histories[user_id]
+                history.append({"role": "user", "content": user_message})
+                history.append({"role": "assistant", "content": reply})
+                if len(history) > MAX_HISTORY * 2:
+                    user_histories[user_id] = history[-(MAX_HISTORY * 2):]
+
+                return reply
+            except Exception as e:
+                logger.warning(f"فشل نموذج OpenRouter {model}: {e}")
 
     return "⚠️ جميع خدمات الذكاء الاصطناعي مشغولة حالياً. حاول لاحقاً."
 
